@@ -2,14 +2,13 @@ from funasr import AutoModel
 from funasr.utils.postprocess_utils import rich_transcription_postprocess
 import sys
 
-# 接收文件名参数
 if len(sys.argv) < 2:
     print("请提供音频文件名作为参数")
     sys.exit(1)
 
 input_file = sys.argv[1]
 
-# 加载模型
+print("正在加载SenseVoice模型...")
 model = AutoModel(
     model="model/SenseVoiceSmall",
     trust_remote_code=False,
@@ -20,7 +19,7 @@ model = AutoModel(
     disable_update=True,
 )
 
-# 处理音频文件
+print("开始处理音频文件...")
 res = model.generate(
     input=input_file,
     cache={},
@@ -33,7 +32,6 @@ res = model.generate(
 
 text = rich_transcription_postprocess(res[0]["text"])
 
-# 保存结果到文件
 output_file = "transcription_result.txt"
 with open(output_file, "w", encoding="utf-8") as f:
     f.write(text)

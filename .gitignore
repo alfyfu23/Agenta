@@ -1,15 +1,47 @@
-/model
-/__pycache__
-/transcription_result.txt
-/uploads
-/intermediate_results.json
-/combined_output.txt
-/meeting_info.txt
-/meeting_type.txt
-/template_custom.md
-/user_prompt.txt
-/key_points_output.txt
-/summary.md
-/title.txt
-/node_modules
-/dist
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Environment / Secrets
+.env
+.env.local
+.env.*.local
+
+# Models
+/model/
+
+# Runtime output files
+transcription_result.txt
+combined_output.txt
+intermediate_results.json
+meeting_info.txt
+meeting_type.txt
+template_custom.md
+user_prompt.txt
+key_points_output.txt
+summary.md
+title.txt
+processing.log
+
+# Uploads
+/uploads/
+
+# Node.js / Frontend
+node_modules/
+dist/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

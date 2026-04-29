@@ -155,7 +155,7 @@ export default defineComponent({
             editor: null,
             transcribeEditor: null,
             openai: null,
-            apiKey: 'sk-8557191220f74fc4bc2e919eb1e8147b',
+            apiKey: import.meta.env.VITE_DEEPSEEK_API_KEY || '',
             highlightRange: null,
             customPrompt: '',
             chatHistory: [],
