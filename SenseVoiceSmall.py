@@ -30,6 +30,10 @@ res = model.generate(
     merge_length_s=15,
 )
 
+if not res or not res[0] or "text" not in res[0]:
+    print("错误: 模型未返回有效转写结果")
+    sys.exit(1)
+
 text = rich_transcription_postprocess(res[0]["text"])
 
 output_file = "transcription_result.txt"

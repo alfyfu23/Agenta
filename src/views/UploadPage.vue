@@ -124,6 +124,7 @@ export default {
         const meetingName = ref('')
         const showTranscriptionHint = ref(false)
         const uploadedFilename = ref('')
+        const sessionId = ref('')
 
         const statusMessage = ref({
             show: false,
@@ -206,6 +207,7 @@ export default {
 
             try {
                 const response = await axios.post('/api/upload', formData, {
+                    withCredentials: true,
                     onUploadProgress: (progressEvent) => {
                         if (progressEvent.lengthComputable) {
                             uploadProgress.value = (progressEvent.loaded / progressEvent.total) * 100
@@ -216,6 +218,7 @@ export default {
                 if (response.data.success) {
                     showStatus('成功', response.data.message, 'success')
                     uploadedFilename.value = response.data.filename
+                    sessionId.value = response.data.session_id
                     showTranscriptionHint.value = true
                 } else {
                     showStatus('错误', response.data.error, 'error')
@@ -274,21 +277,19 @@ export default {
             }
 
             try {
-                // 保存会议名称
+                const sidParam = sessionId.value ? `&sid=${sessionId.value}` : ''
                 const formData = new FormData()
                 formData.append('meeting_name', meetingName.value)
-                await axios.post('/api/save_meeting_name', formData)
+                await axios.post(`/api/save_meeting_name?sid=${sessionId.value || ''}`, formData, { withCredentials: true })
 
-                // 调用后端 /api/transcribe 接口
                 const filename = encodeURIComponent(uploadedFilename.value || selectedFile.value.name)
-                await axios.get(`/api/transcribe?filename=${filename}`)
-                // 直接用 router 跳转
-                router.push(`/transcribe?filename=${filename}`)
+                await axios.get(`/api/transcribe?filename=${filename}${sidParam}`, { withCredentials: true })
+                router.push(`/transcribe?filename=${filename}${sidParam}`)
             } catch (error) {
                 console.error('转写接口调用失败:', error)
-                // 即使失败也继续跳转
                 const filename = encodeURIComponent(uploadedFilename.value || selectedFile.value.name)
-                router.push(`/transcribe?filename=${filename}`)
+                const sidParam = sessionId.value ? `&sid=${sessionId.value}` : ''
+                router.push(`/transcribe?filename=${filename}${sidParam}`)
             }
         }
 

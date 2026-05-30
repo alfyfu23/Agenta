@@ -1,12 +1,14 @@
 import os
+import sys
 import json
 import time
 import asyncio
 from langchain_openai import ChatOpenAI
 from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 MEETING_TYPE_CONFIG = {
     "progress": {
@@ -31,23 +33,17 @@ MEETING_TYPE_CONFIG = {
     }
 }
 
-USER_PROMPT_FILE = "user_prompt.txt"
-MEETING_INFO_FILE = "meeting_info.txt"
-TITLE_FILE = "title.txt"
 
-
-async def extract_key_point(llm, extraction_prompt, result, index, total):
+async def extract_key_point(executor, loop, llm, extraction_prompt, result, index, total):
     start_time = time.time()
     print(f"正在提炼第 {index+1}/{total} 个结果的要点...")
 
     input_text = extraction_prompt + "\n\n" + result
 
-    with ThreadPoolExecutor() as executor:
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            executor,
-            partial(llm.invoke, input_text)
-        )
+    response = await loop.run_in_executor(
+        executor,
+        partial(llm.invoke, input_text)
+    )
 
     elapsed_time = time.time() - start_time
     print(f"第 {index+1} 个结果要点提炼完成，耗时: {elapsed_time:.2f} 秒")
@@ -69,31 +65,23 @@ async def extract_key_points(results, extraction_prompt_file, api_key):
     print(f"开始提炼 {len(results)} 个结果的要点...")
     start_time = time.time()
 
-    tasks = []
-    for i, result in enumerate(results):
-        tasks.append(extract_key_point(llm, extraction_prompt, result, i, len(results)))
-
-    key_points = await asyncio.gather(*tasks)
+    loop = asyncio.get_running_loop()
+    with ThreadPoolExecutor() as executor:
+        tasks = []
+        for i, result in enumerate(results):
+            tasks.append(extract_key_point(executor, loop, llm, extraction_prompt, result, i, len(results)))
+        key_points = await asyncio.gather(*tasks)
 
     total_time = time.time() - start_time
     print(f"所有结果要点提炼完成，总耗时: {total_time:.2f} 秒")
     return key_points
 
 
-async def load_prompt(meeting_type, template_file, user_prompt_file=None):
+async def load_prompt(user_prompt_file, template_file):
     try:
         with open(template_file, 'r', encoding='utf-8') as f:
             template_content = f.read()
 
-        if meeting_type == "custom":
-            try:
-                with open("custom.md", 'r', encoding='utf-8') as f:
-                    custom = f.read()
-                template_content = custom + "\n\n" + template_content
-            except Exception as e:
-                print(f"加载自定义模板失败: {e}")
-
-        user_prompt = ""
         if user_prompt_file:
             try:
                 with open(user_prompt_file, 'r', encoding='utf-8') as f:
@@ -102,9 +90,18 @@ async def load_prompt(meeting_type, template_file, user_prompt_file=None):
             except Exception as e:
                 print(f"加载用户个性化prompt失败: {e}")
 
+        required_vars = ["key_points", "meeting_info", "title"]
+        input_vars = []
+        for var in required_vars:
+            if "{" + var + "}" in template_content:
+                input_vars.append(var)
+
+        if not input_vars:
+            input_vars = required_vars
+
         return PromptTemplate(
             template=template_content,
-            input_variables=["key_points", "meeting_info", "title"]
+            input_variables=input_vars
         )
     except Exception as e:
         print(f"加载提示词模板失败: {e}")
@@ -150,11 +147,11 @@ async def load_title(file_path):
         return None
 
 
-async def generate_final_report(key_points, api_key, meeting_type, prompt_file, user_prompt_file, meeting_info_file, title_file):
+async def generate_final_report(key_points, api_key, prompt_file, user_prompt_file, meeting_info_file, title_file):
     llm = ChatOpenAI(
         openai_api_key=api_key,
         base_url="https://api.deepseek.com",
-        model_name="deepseek-chat",
+        model="deepseek-chat",
         temperature=0,
         max_tokens=16384,
         top_p=0.9,
@@ -171,22 +168,23 @@ async def generate_final_report(key_points, api_key, meeting_type, prompt_file, 
     if not title:
         return None
 
-    prompt = await load_prompt(meeting_type, prompt_file, user_prompt_file)
+    prompt = await load_prompt(user_prompt_file, prompt_file)
     if not prompt:
         return None
 
     print("开始生成最终会议纪要...")
     start_time = time.time()
 
-    chain = LLMChain(llm=llm, prompt=prompt)
     combined_key_points = "\n\n".join(key_points)
+    formatted_prompt = prompt.format(key_points=combined_key_points, meeting_info=meeting_info, title=title)
 
+    loop = asyncio.get_running_loop()
     with ThreadPoolExecutor() as executor:
-        loop = asyncio.get_event_loop()
         final_report = await loop.run_in_executor(
             executor,
-            partial(chain.run, key_points=combined_key_points, meeting_info=meeting_info, title=title)
+            partial(llm.invoke, formatted_prompt)
         )
+    final_report = final_report.content
 
     total_time = time.time() - start_time
     print(f"会议纪要生成完成，耗时: {total_time:.2f} 秒")
@@ -194,6 +192,12 @@ async def generate_final_report(key_points, api_key, meeting_type, prompt_file, 
 
 
 async def main():
+    if len(sys.argv) < 2:
+        print("用法: python summary.py <session_dir>")
+        sys.exit(1)
+
+    session_dir = sys.argv[1]
+
     api_key = os.environ.get("DEEPSEEK_API_KEY", "")
     if not api_key:
         raise ValueError("请设置环境变量 DEEPSEEK_API_KEY")
@@ -202,8 +206,13 @@ async def main():
     for key, config in MEETING_TYPE_CONFIG.items():
         print(f"- {key}: {config['description']}")
 
-    with open('meeting_type.txt', 'r', encoding='utf-8') as f:
-        meeting_type = f.read().strip().lower()
+    meeting_type_file = os.path.join(session_dir, "meeting_type.txt")
+    try:
+        with open(meeting_type_file, 'r', encoding='utf-8') as f:
+            meeting_type = f.read().strip().lower()
+    except FileNotFoundError:
+        print(f"错误: 未找到会议类型文件 '{meeting_type_file}'，默认使用 progress")
+        meeting_type = "progress"
 
     if meeting_type not in MEETING_TYPE_CONFIG:
         print(f"错误: 不支持的会议类型 '{meeting_type}'")
@@ -213,36 +222,43 @@ async def main():
     config = MEETING_TYPE_CONFIG[meeting_type]
     print(f"已选择会议类型: {meeting_type} ({config['description']})")
 
-    user_prompt_file = USER_PROMPT_FILE
-    meeting_info_file = MEETING_INFO_FILE
-    title_file = TITLE_FILE
+    user_prompt_file = os.path.join(session_dir, "user_prompt.txt")
+    meeting_info_file = os.path.join(session_dir, "meeting_info.txt")
+    title_file = os.path.join(session_dir, "title.txt")
+    extraction_prompt_file = os.path.join(SCRIPT_DIR, config["extraction_prompt"])
+    if meeting_type == "custom":
+        template_file = os.path.join(session_dir, "template_custom.md")
+    else:
+        template_file = os.path.join(SCRIPT_DIR, config["template"])
+    intermediate_file = os.path.join(session_dir, "intermediate_results.json")
 
-    print(f"使用统一用户个性化prompt文件: {user_prompt_file}")
-    print(f"使用统一会议信息文件: {meeting_info_file}")
-    print(f"使用统一标题文件: {title_file}")
+    print(f"使用用户个性化prompt文件: {user_prompt_file}")
+    print(f"使用会议信息文件: {meeting_info_file}")
+    print(f"使用标题文件: {title_file}")
 
     try:
-        with open("intermediate_results.json", "r", encoding="utf-8") as f:
+        with open(intermediate_file, "r", encoding="utf-8") as f:
             results = json.load(f)
     except FileNotFoundError:
-        print("错误: 未找到中间结果文件 'intermediate_results.json'")
+        print(f"错误: 未找到中间结果文件 '{intermediate_file}'")
         return
 
-    key_points = await extract_key_points(results, config["extraction_prompt"], api_key)
+    key_points = await extract_key_points(results, extraction_prompt_file, api_key)
 
+    key_points_file = os.path.join(session_dir, "key_points_output.txt")
     merged_key_points = "\n\n".join(key_points)
-    with open("key_points_output.txt", "w", encoding="utf-8") as f:
+    with open(key_points_file, "w", encoding="utf-8") as f:
         f.write(merged_key_points)
 
-    print("已保存提炼要点结果到 key_points_output.txt")
+    print(f"已保存提炼要点结果到 {key_points_file}")
 
     final_report = await generate_final_report(
-        key_points, api_key, meeting_type, config["template"], user_prompt_file, meeting_info_file, title_file
+        key_points, api_key, template_file, user_prompt_file, meeting_info_file, title_file
     )
     if not final_report:
         return
 
-    output_file = "summary.md"
+    output_file = os.path.join(session_dir, "summary.md")
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(final_report)
 

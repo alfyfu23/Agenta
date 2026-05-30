@@ -42,8 +42,10 @@
                             <p class="loading-text">正在等待会议纪要生成...</p>
                             <p class="loading-subtext">将持续检查文件状态</p>
                         </div>
-                        <div v-if="showMarkdownPreview" class="markdown-preview" v-html="markdownHtml"></div>
-                        <editor-content v-else :editor="editor" />
+                        <template v-else>
+                            <div v-if="showMarkdownPreview" class="markdown-preview" v-html="markdownHtml"></div>
+                            <editor-content v-else :editor="editor" />
+                        </template>
                     </div>
                 </div>
             </div>
@@ -134,11 +136,17 @@
 <script>
 import StarterKit from '@tiptap/starter-kit'
 import { Editor, EditorContent } from '@tiptap/vue-3'
-import OpenAI from 'openai'
 import { Plugin } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { defineComponent } from 'vue'
+import { useRoute } from 'vue-router'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
+
+marked.setOptions({
+    breaks: true,
+    gfm: true,
+})
 
 export default defineComponent({
     components: {
@@ -155,7 +163,7 @@ export default defineComponent({
             editor: null,
             transcribeEditor: null,
             openai: null,
-            apiKey: import.meta.env.VITE_DEEPSEEK_API_KEY || '',
+            sid: '',
             highlightRange: null,
             customPrompt: '',
             chatHistory: [],
@@ -176,10 +184,10 @@ export default defineComponent({
             return this.editor.isEmpty
         },
         selectedTextForPrompt() {
-            if (!this.editor) return ''
+            if (!this.editor || !this.highlightRange) return ''
             return this.editor.state.doc.textBetween(
-                this.highlightRange?.from || 0,
-                this.highlightRange?.to || this.editor.state.doc.content.size
+                this.highlightRange.from,
+                this.highlightRange.to
             )
         },
         markdownHtml() {
@@ -207,14 +215,15 @@ export default defineComponent({
                 .replace(/^(\s*)\d+\.\s/gm, '$11. ')
                 .trim()
 
-            return marked.parse(markdownText)
+            return DOMPurify.sanitize(marked.parse(markdownText))
         }
     },
 
     methods: {
         async fetchSummaryMd() {
             try {
-                const response = await fetch('/summary.md')
+                const sidQuery = this.sid ? `?sid=${this.sid}` : ''
+                const response = await fetch(`/api/summary.md${sidQuery}`, { credentials: 'include' })
                 if (!response.ok) {
                     // 如果文件不存在，抛出错误让catch处理
                     if (response.status === 404) throw new Error('文件不存在')
@@ -260,7 +269,8 @@ export default defineComponent({
 
         async fetchCombinedOutput() {
             try {
-                const response = await fetch('/combined_output.txt')
+                const sidQuery = this.sid ? `?sid=${this.sid}` : ''
+                const response = await fetch(`/api/combined_output.txt${sidQuery}`, { credentials: 'include' })
                 if (!response.ok) {
                     if (response.status === 404) throw new Error('文件不存在')
                     throw new Error('获取转写失败')
@@ -285,12 +295,6 @@ export default defineComponent({
         },
 
         initOpenAI() {
-            if (!this.apiKey) return
-            this.openai = new OpenAI({
-                apiKey: this.apiKey,
-                baseURL: 'https://api.deepseek.com/v1',
-                dangerouslyAllowBrowser: true,
-            })
         },
 
         selectAllText() {
@@ -300,7 +304,7 @@ export default defineComponent({
         },
 
         async runAiCommand(command) {
-            if (!this.editor || !this.openai) return
+            if (!this.editor) return
             const { from, to } = this.editor.state.selection
             let selectedText = this.editor.state.doc.textBetween(from, to)
             let highlightFrom = from, highlightTo = to
@@ -329,29 +333,19 @@ export default defineComponent({
             try {
                 this.state.isLoading = true
                 this.state.errorMessage = null
-                const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+                const response = await fetch('/api/ai_proxy', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${this.apiKey}`,
-                    },
-                    body: JSON.stringify({
-                        model: 'deepseek-chat',
-                        messages: [
-                            { role: 'system', content: '你是一个智能写作助手，帮助用户处理文本。请保持文本的格式，仅修改内容，除非用户让你修改格式。如果用户不要求翻译，原文使用哪种语言，返回文本使用哪种语言。只需要返回修改后的内容，不要前后有任何说明。' },
-                            { role: 'user', content: prompt }
-                        ],
-                        temperature: 0.7,
-                        max_tokens: 1000,
-                    }),
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ command, prompt }),
+                    credentials: 'include',
                 })
                 const data = await response.json()
-                if (!data.choices || !Array.isArray(data.choices) || !data.choices[0]) {
-                    this.state.errorMessage = data.error?.message || 'AI接口返回异常，请检查API Key和配额'
+                if (!response.ok || data.error) {
+                    this.state.errorMessage = data.error || 'AI接口返回异常'
                     this.state.isLoading = false
                     return
                 }
-                const aiResponse = data.choices[0].message.content
+                const aiResponse = data.response
                 this.state.response = aiResponse
                 this.chatHistory.push({ user: userQuestion, ai: aiResponse })
             } catch (error) {
@@ -377,29 +371,19 @@ export default defineComponent({
                 : this.customPrompt
 
             try {
-                const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+                const response = await fetch('/api/ai_proxy', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${this.apiKey}`,
-                    },
-                    body: JSON.stringify({
-                        model: 'deepseek-chat',
-                        messages: [
-                            { role: 'system', content: '你是一个智能写作助手，帮助用户处理文本。请只返回普通文本，不要使用markdown格式。' },
-                            { role: 'user', content: prompt }
-                        ],
-                        temperature: 0.7,
-                        max_tokens: 1000,
-                    }),
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ command: 'custom', prompt }),
+                    credentials: 'include',
                 })
                 const data = await response.json()
-                if (!data.choices || !Array.isArray(data.choices) || !data.choices[0]) {
-                    this.state.errorMessage = data.error?.message || 'AI接口返回异常，请检查API Key和配额'
+                if (!response.ok || data.error) {
+                    this.state.errorMessage = data.error || 'AI接口返回异常'
                     this.state.isLoading = false
                     return
                 }
-                const aiResponse = data.choices[0].message.content
+                const aiResponse = data.response
                 this.state.response = aiResponse
                 this.chatHistory.push({
                     user: this.customPrompt + (selectedText ? `（针对选中内容）` : ''),
@@ -437,10 +421,6 @@ export default defineComponent({
         },
 
         async fetchMeetingData() {
-            const res = await fetch('http://localhost:3001/api/meeting')
-            const data = await res.json()
-            this.transcribeEditor?.commands.setContent(data.transcribe || '')
-            this.editor?.commands.setContent(data.note || '')
         },
 
         saveMeetingNote() {
@@ -476,14 +456,12 @@ export default defineComponent({
                 const chatScroll = this.$el.querySelector('.ai-chat-history-scroll')
                 if (chatScroll) chatScroll.scrollTop = chatScroll.scrollHeight
             })
-        },
-        'editor.state.selection'() {
-            const { from, to } = this.editor.state.selection
-            this.highlightRange = from !== to ? { from, to } : null
         }
     },
 
     mounted() {
+        const route = useRoute()
+        this.sid = route.query.sid || ''
         this.initOpenAI()
         this.startSummaryCheck()
         this.fetchMeetingData()
@@ -499,6 +477,10 @@ export default defineComponent({
             content: '',
             parseOptions: {
                 preserveWhitespace: true,
+            },
+            onSelectionUpdate: ({ editor }) => {
+                const { from, to } = editor.state.selection
+                this.highlightRange = from !== to ? { from, to } : null
             }
         })
         this.transcribeEditor = new Editor({
@@ -520,12 +502,11 @@ export default defineComponent({
             const chatScroll = this.$el.querySelector('.ai-chat-history-scroll')
             if (chatScroll) chatScroll.scrollTop = chatScroll.scrollHeight
         })
-        this.fetchMeetingData()
     },
 
     beforeUnmount() {
-        this.editor.destroy()
-        // 组件卸载时清除定时器
+        this.editor?.destroy()
+        this.transcribeEditor?.destroy()
         if (this.summaryCheckInterval) {
             clearInterval(this.summaryCheckInterval)
         }

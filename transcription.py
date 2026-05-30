@@ -34,15 +34,13 @@ def chunk_text_with_overlap(text):
     return chunks
 
 
-async def process_chunk(llm, fixed_prompt, chunk, chunk_index, total_chunks):
+async def process_chunk(executor, loop, llm, fixed_prompt, chunk, chunk_index, total_chunks):
     start_time = time.time()
     print(f"正在处理第 {chunk_index+1}/{total_chunks} 个文本块...")
 
     input_text = fixed_prompt + chunk
 
-    with ThreadPoolExecutor() as executor:
-        loop = asyncio.get_event_loop()
-        r = await loop.run_in_executor(executor, partial(llm.invoke, input_text))
+    r = await loop.run_in_executor(executor, partial(llm.invoke, input_text))
 
     elapsed_time = time.time() - start_time
     print(f"第 {chunk_index+1} 个文本块处理完成，耗时: {elapsed_time:.2f} 秒")
@@ -72,11 +70,12 @@ async def main():
     print(f"开始处理 {len(chunks)} 个文本块...")
     start_time = time.time()
 
-    tasks = []
-    for i, chunk in enumerate(chunks):
-        tasks.append(process_chunk(llm, fixed_prompt, chunk, i, len(chunks)))
-
-    results = await asyncio.gather(*tasks)
+    loop = asyncio.get_running_loop()
+    with ThreadPoolExecutor() as executor:
+        tasks = []
+        for i, chunk in enumerate(chunks):
+            tasks.append(process_chunk(executor, loop, llm, fixed_prompt, chunk, i, len(chunks)))
+        results = await asyncio.gather(*tasks)
 
     total_time = time.time() - start_time
     print(f"所有文本块处理完成，总耗时: {total_time:.2f} 秒")

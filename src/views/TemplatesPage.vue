@@ -113,19 +113,22 @@
                     下一步
                 </button>
             </div>
+            <p v-if="errorMessage" class="text-red-500 text-sm mt-2 text-right">{{ errorMessage }}</p>
         </div>
     </div>
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import axios from 'axios'
 
 export default {
     name: 'TemplatesPage',
     setup() {
         const router = useRouter()
+        const route = useRoute()
+        const sid = ref(route.query.sid || '')
 
         // 响应式数据
         const meetingTime = ref('')
@@ -135,6 +138,7 @@ export default {
         const requirements = ref('')
         const isDropdownOpen = ref(false)
         const isDragOver = ref(false)
+        const customFileInput = ref(null)
 
         const fileInfo = ref({
             show: false,
@@ -195,7 +199,8 @@ export default {
                     const formData = new FormData()
                     formData.append('file', file)
 
-                    const response = await axios.post('/api/upload_custom_template', formData)
+                    const sidParam = sid.value ? `?sid=${sid.value}` : ''
+                    const response = await axios.post(`/api/upload_custom_template${sidParam}`, formData, { withCredentials: true })
 
                     if (response.data.success) {
                         fileInfo.value = {
@@ -226,8 +231,8 @@ export default {
                 }
 
                 // 清空选中的文件
-                if (this.$refs.customFileInput) {
-                    this.$refs.customFileInput.value = ''
+                if (customFileInput.value) {
+                    customFileInput.value.value = ''
                 }
 
                 setTimeout(() => {
@@ -237,17 +242,20 @@ export default {
         }
 
         const goBack = () => {
-            router.push('/transcribe')
+            const sidQuery = sid.value ? `?sid=${sid.value}` : ''
+            router.push(`/transcribe${sidQuery}`)
         }
 
-        const goNext = async () => {
-            try {
-                // 先保存会议类型
-                await axios.post('/api/save_meeting_type', {
-                    type: selectedMeetingType.value || '未设置'
-                })
+        const errorMessage = ref('')
 
-                // 再保存会议信息
+        const goNext = async () => {
+            errorMessage.value = ''
+            try {
+                const sidParam = sid.value ? `?sid=${sid.value}` : ''
+                await axios.post(`/api/save_meeting_type${sidParam}`, {
+                    type: selectedMeetingType.value || '未设置'
+                }, { withCredentials: true })
+
                 const meetingInfo = {
                     time: meetingTime.value || '未设置',
                     participants: participants.value || '未设置',
@@ -256,15 +264,15 @@ export default {
                     requirements: requirements.value || ''
                 }
 
-                await axios.post('/api/save_meeting_info', meetingInfo, { withCredentials: true })
-
-                // 新增：调用 /api/result 触发 summary.py
-                await axios.post('/api/result')
+                await axios.post(`/api/save_meeting_info${sidParam}`, meetingInfo, { withCredentials: true })
+                await axios.post(`/api/result${sidParam}`, null, { withCredentials: true })
 
                 console.log('会议信息保存成功')
-                router.push('/result')
+                const sidQuery = sid.value ? `?sid=${sid.value}` : ''
+                router.push(`/result${sidQuery}`)
             } catch (error) {
                 console.error('请求失败:', error)
+                errorMessage.value = '保存失败，请检查网络后重试'
             }
         }
 
@@ -276,10 +284,9 @@ export default {
         }
 
         onMounted(() => {
-            // 设置默认时间为当前时间
             const now = new Date()
-            const formattedDateTime = now.toISOString().slice(0, 16)
-            meetingTime.value = formattedDateTime
+            const pad = n => String(n).padStart(2, '0')
+            meetingTime.value = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`
 
             // 添加点击外部关闭下拉列表的监听
             document.addEventListener('click', handleClickOutside)
@@ -293,7 +300,9 @@ export default {
             requirements,
             isDropdownOpen,
             isDragOver,
+            customFileInput,
             fileInfo,
+            errorMessage,
             meetingTypeOptions,
             selectedMeetingTypeText,
             toggleDropdown,

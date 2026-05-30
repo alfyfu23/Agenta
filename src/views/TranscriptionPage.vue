@@ -14,7 +14,7 @@
         <!-- 对话内容区域 -->
         <div class="border-2 border-dashed border-border rounded-xl p-6 mb-8 min-h-[300px]">
             <div class="mb-6">
-                <p class="text-gray-600 text-lg" v-html="transcription"></p>
+                <p class="text-gray-600 text-lg" style="white-space: pre-wrap;">{{ transcription }}</p>
             </div>
         </div>
 
@@ -54,6 +54,7 @@ export default {
 
         let progressInterval = null
         let checkInterval = null
+        const sid = ref('')
 
         // 模拟进度条动画
         const startProgressAnimation = () => {
@@ -74,7 +75,7 @@ export default {
         // 检查转写结果
         const checkTranscription = async () => {
             try {
-                const response = await axios.get('/api/check_transcription')
+                const response = await axios.get(`/api/check_transcription?sid=${sid.value}`)
                 const data = response.data
 
                 if (data.completed) {
@@ -89,7 +90,7 @@ export default {
                     // 更新进度为100%
                     progressBarWidth.value = 100
                     progressText.value = '转写完成'
-                    transcription.value = data.transcription.replace(/\n/g, '<br>')
+                    transcription.value = data.transcription
                     isCompleted.value = true
                 }
             } catch (error) {
@@ -137,11 +138,13 @@ export default {
 
         // 下一步
         const goNext = () => {
-            router.push('templates')
+            const sidQuery = sid.value ? `?sid=${sid.value}` : ''
+            router.push(`/templates${sidQuery}`)
         }
 
         // 组件挂载时启动进度检查
         onMounted(() => {
+            sid.value = route.query.sid || ''
             startProgressAnimation()
 
             // 每秒检查一次转写结果
