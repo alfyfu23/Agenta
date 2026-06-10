@@ -44,7 +44,7 @@
                         </div>
                         <template v-else>
                             <div v-if="showMarkdownPreview" class="markdown-preview" v-html="markdownHtml"></div>
-                            <editor-content v-else :editor="editor" />
+                            <editor-content v-else-if="!isLoadingSummary" :editor="editor" />
                         </template>
                     </div>
                 </div>
@@ -139,7 +139,6 @@ import { Editor, EditorContent } from '@tiptap/vue-3'
 import { Plugin } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { defineComponent } from 'vue'
-import { useRoute } from 'vue-router'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
@@ -445,7 +444,8 @@ export default defineComponent({
 
         goBack() {
             if (confirm('确定要返回吗？未保存的更改将会丢失。')) {
-                this.$router.push('/templates');
+                const sidQuery = this.sid ? `?sid=${this.sid}` : ''
+                this.$router.push(`/templates${sidQuery}`)
             }
         }
     },
@@ -460,8 +460,7 @@ export default defineComponent({
     },
 
     mounted() {
-        const route = useRoute()
-        this.sid = route.query.sid || ''
+        this.sid = this.$route.query.sid || ''
         this.initOpenAI()
         this.startSummaryCheck()
         this.fetchMeetingData()
@@ -1364,23 +1363,5 @@ $transition: all 0.25s ease; // 统一过渡动画
     font-size: 13px;
     color: $text-secondary;
     margin: 0;
-}
-
-// 确保编辑器在加载时不显示
-.editor-content-fixed {
-
-    >.tiptap-editor,
-    >.ProseMirror {
-        display: none; // 默认隐藏编辑器内容
-    }
-
-    // 当加载完成后显示编辑器
-    &:not(:has(.loading-container)) {
-
-        >.tiptap-editor,
-        >.ProseMirror {
-            display: block;
-        }
-    }
 }
 </style>

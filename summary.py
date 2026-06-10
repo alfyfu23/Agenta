@@ -126,9 +126,9 @@ async def load_meeting_info(file_path):
                 return None
 
         formatted_info = (
-            f"**时间**：{meeting_info['时间']}\n"
-            f"**参会人**：{meeting_info['参会人']}\n"
-            f"**记录人**：{meeting_info['记录人']}\n\n"
+            f"**时间**: {meeting_info['时间']}\n"
+            f"**参会人**: {meeting_info['参会人']}\n"
+            f"**记录人**: {meeting_info['记录人']}\n\n"
         )
 
         return formatted_info

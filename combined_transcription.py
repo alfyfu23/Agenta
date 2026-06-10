@@ -96,6 +96,16 @@ async def process_transcription(session_dir):
     print(f"已保存中间结果到 {intermediate_file}")
 
 
+def _get_device():
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return "cuda:0"
+    except ImportError:
+        pass
+    return "cpu"
+
+
 def main():
     if len(sys.argv) < 3:
         print("用法: python combined_transcription.py <audio_path> <session_dir>")
@@ -104,13 +114,15 @@ def main():
     input_file = sys.argv[1]
     session_dir = sys.argv[2]
 
+    device = _get_device()
+    print(f"使用设备: {device}")
     print("正在加载SenseVoice模型...")
     model = AutoModel(
         model="model/SenseVoiceSmall",
         trust_remote_code=False,
         vad_model="model/speech_fsmn_vad_zh-cn-16k-common-pytorch",
         vad_kwargs={"max_single_segment_time": 30000},
-        device="cuda:0",
+        device=device,
         disable_tqdm=True,
         disable_update=True,
     )

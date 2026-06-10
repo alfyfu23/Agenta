@@ -1,7 +1,6 @@
-import time
 import threading
 import uuid
-from flask import Flask, render_template, request, jsonify, send_from_directory, session
+from flask import Flask, request, jsonify, send_from_directory, session
 from flask_cors import CORS
 import os
 import sys
@@ -23,11 +22,12 @@ ALLOWED_TEMPLATE_EXTENSIONS = {'md', 'markdown'}
 ALLOWED_AI_COMMANDS = {'rephrase', 'summarize', 'simplify', 'fixSpelling', 'translateChinese', 'translateEnglish'}
 
 sessions = {}
+sessions_lock = threading.Lock()
 
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
-app.secret_key = secrets.token_hex(16)
+app.secret_key = os.environ.get('FLASK_SECRET_KEY') or secrets.token_hex(16)
 
 
 def _validate_filename(filename):
@@ -55,8 +55,10 @@ def _get_session_id():
     if not sid or sid not in sessions:
         sid = str(uuid.uuid4())
         session['sid'] = sid
-        sessions[sid] = {'dir': os.path.join(UPLOAD_FOLDER, sid)}
-        os.makedirs(sessions[sid]['dir'], exist_ok=True)
+        session_dir = os.path.join(UPLOAD_FOLDER, sid)
+        with sessions_lock:
+            sessions[sid] = {'dir': session_dir}
+        os.makedirs(session_dir, exist_ok=True)
     return sid
 
 
@@ -114,7 +116,15 @@ def transcribe():
         os.remove(result_file)
 
     def run_transcription():
-        subprocess.run([sys.executable, "combined_transcription.py", os.path.abspath(audio_path), os.path.abspath(session_dir)])
+        try:
+            subprocess.run(
+                [sys.executable, "combined_transcription.py",
+                 os.path.abspath(audio_path), os.path.abspath(session_dir)],
+                check=True,
+            )
+        except Exception as e:
+            with open(os.path.join(session_dir, "error.txt"), "w", encoding="utf-8") as f:
+                f.write(str(e))
 
     threading.Thread(target=run_transcription).start()
 
@@ -124,6 +134,10 @@ def transcribe():
 @app.route('/check_transcription')
 def check_transcription():
     session_dir = _get_session_dir()
+    error_file = os.path.join(session_dir, "error.txt")
+    if os.path.exists(error_file):
+        with open(error_file, "r", encoding="utf-8") as f:
+            return jsonify({'completed': True, 'error': f.read()})
     result_file = os.path.join(session_dir, "combined_output.txt")
     if os.path.exists(result_file) and os.path.getsize(result_file) > 0:
         with open(result_file, "r", encoding="utf-8") as f:
@@ -143,7 +157,14 @@ def result():
     session_dir = _get_session_dir()
 
     def run_result():
-        subprocess.run([sys.executable, "summary.py", os.path.abspath(session_dir)])
+        try:
+            subprocess.run(
+                [sys.executable, "summary.py", os.path.abspath(session_dir)],
+                check=True,
+            )
+        except Exception as e:
+            with open(os.path.join(session_dir, "error.txt"), "w", encoding="utf-8") as f:
+                f.write(str(e))
 
     summary_file = os.path.join(session_dir, "summary.md")
     if os.path.exists(summary_file):
@@ -156,6 +177,10 @@ def result():
 @app.route('/summary.md')
 def get_summary():
     session_dir = _get_session_dir()
+    error_file = os.path.join(session_dir, "error.txt")
+    if os.path.exists(error_file):
+        with open(error_file, "r", encoding="utf-8") as f:
+            return jsonify({'error': f.read()}), 500
     return send_from_directory(session_dir, 'summary.md')
 
 
