@@ -48,7 +48,7 @@ def _get_session_id():
         try:
             data = request.get_json(silent=True) or {}
         except Exception:
-            pass
+            data = {}
         sid = data.get('sid')
     if not sid:
         sid = session.get('sid')
@@ -77,16 +77,17 @@ def upload_file():
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'}), 400
     file = request.files['file']
-    if file.filename == '':
+    filename = file.filename or ''
+    if filename == '':
         return jsonify({'error': 'No selected file'}), 400
-    if '.' not in file.filename:
+    if '.' not in filename:
         return jsonify({'error': '文件格式错误'}), 400
 
-    file_ext = file.filename.split('.')[-1].lower()
+    file_ext = filename.split('.')[-1].lower()
     if file_ext not in ALLOWED_AUDIO_EXTENSIONS:
         return jsonify({'error': '文件格式错误'}), 400
 
-    safe_name = _validate_filename(file.filename)
+    safe_name = _validate_filename(filename)
     if not safe_name:
         return jsonify({'error': '文件名无效'}), 400
 
@@ -251,13 +252,14 @@ def upload_custom_template():
         return jsonify({'error': '未选择文件'}), 400
 
     file = request.files['file']
-    if file.filename == '':
+    filename = file.filename or ''
+    if filename == '':
         return jsonify({'error': '未选择文件'}), 400
 
-    if '.' not in file.filename:
+    if '.' not in filename:
         return jsonify({'error': '文件格式错误，仅支持.md和.markdown'}), 400
 
-    file_ext = file.filename.split('.')[-1].lower()
+    file_ext = filename.split('.')[-1].lower()
     if file_ext not in ALLOWED_TEMPLATE_EXTENSIONS:
         return jsonify({'error': '文件格式错误，仅支持.md和.markdown'}), 400
 
