@@ -78,10 +78,19 @@ async def extract_key_points(results, extraction_prompt_file, api_key):
     return key_points
 
 
-async def load_prompt(user_prompt_file, template_file):
+async def load_prompt(meeting_type, user_prompt_file, template_file):
     try:
         with open(template_file, encoding='utf-8') as f:
             template_content = f.read()
+
+        if meeting_type == "custom":
+            try:
+                instruction_file = os.path.join(SCRIPT_DIR, "custom.md")
+                with open(instruction_file, encoding='utf-8') as f:
+                    instructions = f.read()
+                template_content = instructions + "\n\n" + template_content
+            except Exception as e:
+                print(f"加载自定义模板指令失败: {e}")
 
         if user_prompt_file:
             try:
@@ -148,7 +157,7 @@ async def load_title(file_path):
         return None
 
 
-async def generate_final_report(key_points, api_key, prompt_file, user_prompt_file, meeting_info_file, title_file):
+async def generate_final_report(key_points, api_key, meeting_type, prompt_file, user_prompt_file, meeting_info_file, title_file):
     llm = ChatOpenAI(
         openai_api_key=api_key,
         base_url="https://api.deepseek.com",
@@ -169,7 +178,7 @@ async def generate_final_report(key_points, api_key, prompt_file, user_prompt_fi
     if not title:
         return None
 
-    prompt = await load_prompt(user_prompt_file, prompt_file)
+    prompt = await load_prompt(meeting_type, user_prompt_file, prompt_file)
     if not prompt:
         return None
 
@@ -254,7 +263,7 @@ async def main():
     print(f"已保存提炼要点结果到 {key_points_file}")
 
     final_report = await generate_final_report(
-        key_points, api_key, template_file, user_prompt_file, meeting_info_file, title_file
+        key_points, api_key, meeting_type, template_file, user_prompt_file, meeting_info_file, title_file
     )
     if not final_report:
         return
