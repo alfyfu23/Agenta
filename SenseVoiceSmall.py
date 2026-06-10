@@ -1,6 +1,7 @@
+import sys
+
 from funasr import AutoModel
 from funasr.utils.postprocess_utils import rich_transcription_postprocess
-import sys
 
 
 def _get_device():

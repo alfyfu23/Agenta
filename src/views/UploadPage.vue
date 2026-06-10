@@ -1,109 +1,176 @@
 <template>
-    <div class="p-6 md:p-8">
-        <!-- 标题部分 -->
-        <div class="mb-6">
-            <h2 class="text-3xl font-bold mb-2">新建会议</h2>
-            <p class="text-neutral">上传音频文件</p>
-        </div>
-
-        <!-- 文件上传区域 -->
-        <div class="max-w-3xl mx-auto">
-            <div ref="dropArea"
-                class="border-2 border-dashed border-gray-300 rounded-lg p-10 text-center cursor-pointer hover:border-primary transition-all duration-300"
-                :class="{ 'border-primary bg-primary/5': isDragOver }" @drop="handleDrop"
-                @dragover.prevent="isDragOver = true" @dragleave.prevent="isDragOver = false"
-                @dragenter.prevent="isDragOver = true">
-                <i class="fa fa-cloud-upload text-5xl text-gray-400 mb-4"></i>
-                <h3 class="text-xl font-semibold text-neutral mb-2">拖放文件到此处</h3>
-                <p class="text-gray-500 mb-6">或者</p>
-                <label for="fileInput"
-                    class="inline-block bg-primary hover:bg-primary/90 text-white font-medium py-3 px-8 rounded-lg cursor-pointer transition-all duration-300 shadow-md hover:shadow-lg">
-                    <i class="fa fa-file-o mr-2"></i>选择文件
-                </label>
-                <input ref="fileInput" type="file" id="fileInput" class="hidden" accept=".mp3,.wav,.m4a,.flac,.wma"
-                    @change="handleFileSelect">
-                <p class="text-gray-400 text-sm mt-4">支持的格式：MP3、WAV、M4A/FLAC、WMA</p>
-            </div>
-
-            <!-- 文件信息预览 -->
-            <div v-if="selectedFile" class="mt-8 animate-fadeIn">
-                <div class="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
-                    <div class="bg-gray-50 px-4 py-3 flex justify-between items-center">
-                        <h4 class="font-medium text-neutral">{{ selectedFile.name }}</h4>
-                        <button @click="clearFileSelection"
-                            class="text-gray-400 hover:text-red-500 transition-all duration-200">
-                            <i class="fa fa-times"></i>
-                        </button>
-                    </div>
-                    <div class="p-4">
-                        <div class="flex items-center space-x-4">
-                            <div class="w-16 h-16 rounded-lg bg-gray-100 flex items-center justify-center">
-                                <i :class="fileIconClass" class="text-3xl"></i>
-                            </div>
-                            <div class="flex-grow">
-                                <div class="grid grid-cols-2 gap-2 text-sm">
-                                    <div>
-                                        <span class="text-gray-500">大小:</span>
-                                        <span class="text-neutral font-medium">{{ formatBytes(selectedFile.size)
-                                            }}</span>
-                                    </div>
-                                    <div>
-                                        <span class="text-gray-500">类型:</span>
-                                        <span class="text-neutral font-medium">{{ selectedFile.type || '未知类型' }}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- 上传进度条 -->
-                        <div v-if="isUploading" class="mt-4">
-                            <div class="w-full bg-gray-200 rounded-full h-2.5">
-                                <div class="bg-primary h-2.5 rounded-full transition-all duration-300"
-                                    :style="{ width: uploadProgress + '%' }"></div>
-                            </div>
-                            <p class="text-xs text-gray-500 mt-1 text-right">{{ Math.round(uploadProgress) }}%</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 上传按钮 -->
-            <div v-if="selectedFile && !isUploading" class="mt-6 text-center animate-fadeIn">
-                <button @click="uploadFile"
-                    class="bg-primary hover:bg-primary/90 text-white font-medium py-3 px-8 rounded-lg transition-all duration-300 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center mx-auto">
-                    <i class="fa fa-upload mr-2"></i>
-                    <span>上传文件</span>
-                </button>
-            </div>
-
-            <!-- 上传状态反馈 -->
-            <div v-if="statusMessage.show" class="mb-8 animate-fadeIn">
-                <div class="p-4 rounded-lg flex items-center" :class="statusMessage.class">
-                    <i :class="statusMessage.icon" class="mr-3 text-xl"></i>
-                    <p>{{ statusMessage.text }}</p>
-                </div>
-            </div>
-
-            <!-- 会议名称输入区域 -->
-            <div class="mb-6">
-                <label class="block text-neutral mb-3">会议名称</label>
-                <div class="relative">
-                    <input v-model="meetingName" type="text" placeholder="点击输入（非必填）"
-                        class="w-full px-4 py-3 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all">
-                </div>
-                <p v-if="nameSaveStatus.show" class="mt-2 text-sm" :class="nameSaveStatus.class">
-                    {{ nameSaveStatus.text }}
-                </p>
-            </div>
-
-            <!-- 音频转写提示 -->
-            <div v-if="showTranscriptionHint" class="flex justify-end animate-fadeIn">
-                <button @click="goToTranscription" class="btn-primary">
-                    下一步
-                </button>
-            </div>
-        </div>
+  <div class="p-6 md:p-8">
+    <!-- 标题部分 -->
+    <div class="mb-6">
+      <h2 class="text-3xl font-bold mb-2">
+        新建会议
+      </h2>
+      <p class="text-neutral">
+        上传音频文件
+      </p>
     </div>
+
+    <!-- 文件上传区域 -->
+    <div class="max-w-3xl mx-auto">
+      <div
+        ref="dropArea"
+        class="border-2 border-dashed border-gray-300 rounded-lg p-10 text-center cursor-pointer hover:border-primary transition-all duration-300"
+        :class="{ 'border-primary bg-primary/5': isDragOver }"
+        @drop="handleDrop"
+        @dragover.prevent="isDragOver = true"
+        @dragleave.prevent="isDragOver = false"
+        @dragenter.prevent="isDragOver = true"
+      >
+        <i class="fa fa-cloud-upload text-5xl text-gray-400 mb-4" />
+        <h3 class="text-xl font-semibold text-neutral mb-2">
+          拖放文件到此处
+        </h3>
+        <p class="text-gray-500 mb-6">
+          或者
+        </p>
+        <label
+          for="fileInput"
+          class="inline-block bg-primary hover:bg-primary/90 text-white font-medium py-3 px-8 rounded-lg cursor-pointer transition-all duration-300 shadow-md hover:shadow-lg"
+        >
+          <i class="fa fa-file-o mr-2" />选择文件
+        </label>
+        <input
+          id="fileInput"
+          ref="fileInput"
+          type="file"
+          class="hidden"
+          accept=".mp3,.wav,.m4a,.flac,.wma"
+          @change="handleFileSelect"
+        >
+        <p class="text-gray-400 text-sm mt-4">
+          支持的格式：MP3、WAV、M4A/FLAC、WMA
+        </p>
+      </div>
+
+      <!-- 文件信息预览 -->
+      <div
+        v-if="selectedFile"
+        class="mt-8 animate-fadeIn"
+      >
+        <div class="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+          <div class="bg-gray-50 px-4 py-3 flex justify-between items-center">
+            <h4 class="font-medium text-neutral">
+              {{ selectedFile.name }}
+            </h4>
+            <button
+              class="text-gray-400 hover:text-red-500 transition-all duration-200"
+              @click="clearFileSelection"
+            >
+              <i class="fa fa-times" />
+            </button>
+          </div>
+          <div class="p-4">
+            <div class="flex items-center space-x-4">
+              <div class="w-16 h-16 rounded-lg bg-gray-100 flex items-center justify-center">
+                <i
+                  :class="fileIconClass"
+                  class="text-3xl"
+                />
+              </div>
+              <div class="flex-grow">
+                <div class="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <span class="text-gray-500">大小:</span>
+                    <span class="text-neutral font-medium">{{ formatBytes(selectedFile.size)
+                    }}</span>
+                  </div>
+                  <div>
+                    <span class="text-gray-500">类型:</span>
+                    <span class="text-neutral font-medium">{{ selectedFile.type || '未知类型' }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 上传进度条 -->
+            <div
+              v-if="isUploading"
+              class="mt-4"
+            >
+              <div class="w-full bg-gray-200 rounded-full h-2.5">
+                <div
+                  class="bg-primary h-2.5 rounded-full transition-all duration-300"
+                  :style="{ width: uploadProgress + '%' }"
+                />
+              </div>
+              <p class="text-xs text-gray-500 mt-1 text-right">
+                {{ Math.round(uploadProgress) }}%
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 上传按钮 -->
+      <div
+        v-if="selectedFile && !isUploading"
+        class="mt-6 text-center animate-fadeIn"
+      >
+        <button
+          class="bg-primary hover:bg-primary/90 text-white font-medium py-3 px-8 rounded-lg transition-all duration-300 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center mx-auto"
+          @click="uploadFile"
+        >
+          <i class="fa fa-upload mr-2" />
+          <span>上传文件</span>
+        </button>
+      </div>
+
+      <!-- 上传状态反馈 -->
+      <div
+        v-if="statusMessage.show"
+        class="mb-8 animate-fadeIn"
+      >
+        <div
+          class="p-4 rounded-lg flex items-center"
+          :class="statusMessage.class"
+        >
+          <i
+            :class="statusMessage.icon"
+            class="mr-3 text-xl"
+          />
+          <p>{{ statusMessage.text }}</p>
+        </div>
+      </div>
+
+      <!-- 会议名称输入区域 -->
+      <div class="mb-6">
+        <label class="block text-neutral mb-3">会议名称</label>
+        <div class="relative">
+          <input
+            v-model="meetingName"
+            type="text"
+            placeholder="点击输入（非必填）"
+            class="w-full px-4 py-3 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
+          >
+        </div>
+        <p
+          v-if="nameSaveStatus.show"
+          class="mt-2 text-sm"
+          :class="nameSaveStatus.class"
+        >
+          {{ nameSaveStatus.text }}
+        </p>
+      </div>
+
+      <!-- 音频转写提示 -->
+      <div
+        v-if="showTranscriptionHint"
+        class="flex justify-end animate-fadeIn"
+      >
+        <button
+          class="btn-primary"
+          @click="goToTranscription"
+        >
+          下一步
+        </button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script>

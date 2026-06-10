@@ -1,121 +1,186 @@
 <template>
-    <div class="p-6 md:p-8">
-        <!-- 标题区域 -->
-        <div class="mb-8 text-center">
-            <h2 class="text-2xl font-bold">会议基本信息</h2>
-        </div>
-
-        <!-- 表单区域 -->
-        <div class="max-w-2xl mx-auto space-y-6">
-            <!-- 会议时间模块 -->
-            <div>
-                <label class="block text-neutral mb-2">会议时间</label>
-                <div class="relative">
-                    <input v-model="meetingTime" type="datetime-local" class="form-input-style">
-                    <div class="absolute left-3 top-1/2 -translate-y-1/2 text-neutral">
-                        <i class="fa fa-calendar"></i>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 参会人员模块 -->
-            <div>
-                <label class="block text-neutral mb-2">参会人员</label>
-                <div class="relative">
-                    <input v-model="participants" type="text" placeholder="输入参会人员姓名" class="form-input-style">
-                    <div class="absolute left-3 top-1/2 -translate-y-1/2 text-neutral">
-                        <i class="fa fa-user"></i>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 记录人模块 -->
-            <div>
-                <label class="block text-neutral mb-2">记录人</label>
-                <div class="relative">
-                    <input v-model="recorder" type="text" placeholder="输入记录人" class="form-input-style">
-                    <div class="absolute left-3 top-1/2 -translate-y-1/2 text-neutral">
-                        <i class="fa fa-pencil"></i>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 会议类型模块 -->
-            <div>
-                <label class="block text-neutral mb-2">会议类型</label>
-                <div class="relative">
-                    <!-- 自定义下拉选择框 -->
-                    <div @click="toggleDropdown" class="form-input-style cursor-pointer">
-                        <span :class="selectedMeetingType ? 'text-gray-800' : 'text-placeholder'">
-                            {{ selectedMeetingTypeText }}
-                        </span>
-                    </div>
-                    <div class="absolute left-3 top-1/2 -translate-y-1/2 text-neutral">
-                        <i class="fa fa-list-ul"></i>
-                    </div>
-                    <div @click="toggleDropdown"
-                        class="absolute right-3 top-1/2 -translate-y-1/2 text-primary cursor-pointer transition-transform duration-300"
-                        :class="{ 'rotate-180': isDropdownOpen }">
-                        <i class="fa fa-chevron-down"></i>
-                    </div>
-                    <!-- 下拉选项列表 -->
-                    <div v-show="isDropdownOpen"
-                        class="absolute left-0 right-0 top-full mt-1 bg-white border border-border rounded-lg dropdown-shadow z-10">
-                        <ul class="py-1">
-                            <li v-for="option in meetingTypeOptions" :key="option.value"
-                                @click="selectMeetingType(option)" class="px-4 py-2 hover:bg-gray-50 cursor-pointer">
-                                {{ option.text }}
-                            </li>
-                        </ul>
-                    </div>
-                </div>
-
-                <!-- 自定义会议类型的文件上传区域 -->
-                <div v-if="selectedMeetingType === 'custom'" class="mt-4 animate-fadeIn">
-                    <div ref="dropArea"
-                        class="border border-dashed border-border rounded-lg p-4 text-center bg-gray-50 transition-all duration-300"
-                        :class="{ 'border-primary bg-primary/5': isDragOver }" @drop="handleDrop"
-                        @dragover.prevent="isDragOver = true" @dragleave.prevent="isDragOver = false"
-                        @dragenter.prevent="isDragOver = true">
-                        <i class="fa fa-cloud-upload text-2xl text-neutral mb-2"></i>
-                        <p class="text-sm text-neutral mb-3">上传自定义的模板文件</p>
-                        <p class="text-xs text-neutral-400 mb-4">支持的格式：markdown</p>
-                        <input ref="customFileInput" type="file" class="hidden" accept=".md,.markdown"
-                            @change="handleFileSelect">
-                        <button @click="$refs.customFileInput.click()"
-                            class="bg-primary text-white px-4 py-2 rounded-md text-sm hover:bg-primary/90 transition-colors">
-                            选择文件
-                        </button>
-                        <div v-if="fileInfo.show" class="mt-2 text-sm" :class="fileInfo.class">
-                            {{ fileInfo.text }}
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 个性化要求模块 -->
-            <div>
-                <label class="block text-neutral mb-2">个性化要求</label>
-                <div class="relative">
-                    <input v-model="requirements" type="text" placeholder="输入个性化要求" class="form-input-style">
-                    <div class="absolute left-3 top-1/2 -translate-y-1/2 text-neutral">
-                        <i class="fa fa-heart-o"></i>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 底部操作按钮 -->
-            <div class="flex justify-end gap-4 mt-8">
-                <button @click="goBack" class="btn-secondary">
-                    返回
-                </button>
-                <button @click="goNext" class="btn-primary">
-                    下一步
-                </button>
-            </div>
-            <p v-if="errorMessage" class="text-red-500 text-sm mt-2 text-right">{{ errorMessage }}</p>
-        </div>
+  <div class="p-6 md:p-8">
+    <!-- 标题区域 -->
+    <div class="mb-8 text-center">
+      <h2 class="text-2xl font-bold">
+        会议基本信息
+      </h2>
     </div>
+
+    <!-- 表单区域 -->
+    <div class="max-w-2xl mx-auto space-y-6">
+      <!-- 会议时间模块 -->
+      <div>
+        <label class="block text-neutral mb-2">会议时间</label>
+        <div class="relative">
+          <input
+            v-model="meetingTime"
+            type="datetime-local"
+            class="form-input-style"
+          >
+          <div class="absolute left-3 top-1/2 -translate-y-1/2 text-neutral">
+            <i class="fa fa-calendar" />
+          </div>
+        </div>
+      </div>
+
+      <!-- 参会人员模块 -->
+      <div>
+        <label class="block text-neutral mb-2">参会人员</label>
+        <div class="relative">
+          <input
+            v-model="participants"
+            type="text"
+            placeholder="输入参会人员姓名"
+            class="form-input-style"
+          >
+          <div class="absolute left-3 top-1/2 -translate-y-1/2 text-neutral">
+            <i class="fa fa-user" />
+          </div>
+        </div>
+      </div>
+
+      <!-- 记录人模块 -->
+      <div>
+        <label class="block text-neutral mb-2">记录人</label>
+        <div class="relative">
+          <input
+            v-model="recorder"
+            type="text"
+            placeholder="输入记录人"
+            class="form-input-style"
+          >
+          <div class="absolute left-3 top-1/2 -translate-y-1/2 text-neutral">
+            <i class="fa fa-pencil" />
+          </div>
+        </div>
+      </div>
+
+      <!-- 会议类型模块 -->
+      <div>
+        <label class="block text-neutral mb-2">会议类型</label>
+        <div class="relative">
+          <!-- 自定义下拉选择框 -->
+          <div
+            class="form-input-style cursor-pointer"
+            @click="toggleDropdown"
+          >
+            <span :class="selectedMeetingType ? 'text-gray-800' : 'text-placeholder'">
+              {{ selectedMeetingTypeText }}
+            </span>
+          </div>
+          <div class="absolute left-3 top-1/2 -translate-y-1/2 text-neutral">
+            <i class="fa fa-list-ul" />
+          </div>
+          <div
+            class="absolute right-3 top-1/2 -translate-y-1/2 text-primary cursor-pointer transition-transform duration-300"
+            :class="{ 'rotate-180': isDropdownOpen }"
+            @click="toggleDropdown"
+          >
+            <i class="fa fa-chevron-down" />
+          </div>
+          <!-- 下拉选项列表 -->
+          <div
+            v-show="isDropdownOpen"
+            class="absolute left-0 right-0 top-full mt-1 bg-white border border-border rounded-lg dropdown-shadow z-10"
+          >
+            <ul class="py-1">
+              <li
+                v-for="option in meetingTypeOptions"
+                :key="option.value"
+                class="px-4 py-2 hover:bg-gray-50 cursor-pointer"
+                @click="selectMeetingType(option)"
+              >
+                {{ option.text }}
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- 自定义会议类型的文件上传区域 -->
+        <div
+          v-if="selectedMeetingType === 'custom'"
+          class="mt-4 animate-fadeIn"
+        >
+          <div
+            ref="dropArea"
+            class="border border-dashed border-border rounded-lg p-4 text-center bg-gray-50 transition-all duration-300"
+            :class="{ 'border-primary bg-primary/5': isDragOver }"
+            @drop="handleDrop"
+            @dragover.prevent="isDragOver = true"
+            @dragleave.prevent="isDragOver = false"
+            @dragenter.prevent="isDragOver = true"
+          >
+            <i class="fa fa-cloud-upload text-2xl text-neutral mb-2" />
+            <p class="text-sm text-neutral mb-3">
+              上传自定义的模板文件
+            </p>
+            <p class="text-xs text-neutral-400 mb-4">
+              支持的格式：markdown
+            </p>
+            <input
+              ref="customFileInput"
+              type="file"
+              class="hidden"
+              accept=".md,.markdown"
+              @change="handleFileSelect"
+            >
+            <button
+              class="bg-primary text-white px-4 py-2 rounded-md text-sm hover:bg-primary/90 transition-colors"
+              @click="$refs.customFileInput.click()"
+            >
+              选择文件
+            </button>
+            <div
+              v-if="fileInfo.show"
+              class="mt-2 text-sm"
+              :class="fileInfo.class"
+            >
+              {{ fileInfo.text }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 个性化要求模块 -->
+      <div>
+        <label class="block text-neutral mb-2">个性化要求</label>
+        <div class="relative">
+          <input
+            v-model="requirements"
+            type="text"
+            placeholder="输入个性化要求"
+            class="form-input-style"
+          >
+          <div class="absolute left-3 top-1/2 -translate-y-1/2 text-neutral">
+            <i class="fa fa-heart-o" />
+          </div>
+        </div>
+      </div>
+
+      <!-- 底部操作按钮 -->
+      <div class="flex justify-end gap-4 mt-8">
+        <button
+          class="btn-secondary"
+          @click="goBack"
+        >
+          返回
+        </button>
+        <button
+          class="btn-primary"
+          @click="goNext"
+        >
+          下一步
+        </button>
+      </div>
+      <p
+        v-if="errorMessage"
+        class="text-red-500 text-sm mt-2 text-right"
+      >
+        {{ errorMessage }}
+      </p>
+    </div>
+  </div>
 </template>
 
 <script>

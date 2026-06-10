@@ -1,12 +1,13 @@
+import asyncio
+import json
 import os
 import sys
-import json
 import time
-import asyncio
-from langchain_openai import ChatOpenAI
-from langchain.prompts import PromptTemplate
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
+
+from langchain.prompts import PromptTemplate
+from langchain_openai import ChatOpenAI
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -59,7 +60,7 @@ async def extract_key_points(results, extraction_prompt_file, api_key):
         max_tokens=8192,
     )
 
-    with open(extraction_prompt_file, "r", encoding="utf-8") as f:
+    with open(extraction_prompt_file, encoding="utf-8") as f:
         extraction_prompt = f.read()
 
     print(f"开始提炼 {len(results)} 个结果的要点...")
@@ -79,12 +80,12 @@ async def extract_key_points(results, extraction_prompt_file, api_key):
 
 async def load_prompt(user_prompt_file, template_file):
     try:
-        with open(template_file, 'r', encoding='utf-8') as f:
+        with open(template_file, encoding='utf-8') as f:
             template_content = f.read()
 
         if user_prompt_file:
             try:
-                with open(user_prompt_file, 'r', encoding='utf-8') as f:
+                with open(user_prompt_file, encoding='utf-8') as f:
                     user_prompt = f.read()
                 template_content = user_prompt + "\n\n" + template_content
             except Exception as e:
@@ -110,7 +111,7 @@ async def load_prompt(user_prompt_file, template_file):
 
 async def load_meeting_info(file_path):
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, encoding='utf-8') as f:
             content = f.read()
 
         meeting_info = {}
@@ -139,7 +140,7 @@ async def load_meeting_info(file_path):
 
 async def load_title(file_path):
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, encoding='utf-8') as f:
             content = f.read()
         return content
     except Exception as e:
@@ -208,7 +209,7 @@ async def main():
 
     meeting_type_file = os.path.join(session_dir, "meeting_type.txt")
     try:
-        with open(meeting_type_file, 'r', encoding='utf-8') as f:
+        with open(meeting_type_file, encoding='utf-8') as f:
             meeting_type = f.read().strip().lower()
     except FileNotFoundError:
         print(f"错误: 未找到会议类型文件 '{meeting_type_file}'，默认使用 progress")
@@ -237,7 +238,7 @@ async def main():
     print(f"使用标题文件: {title_file}")
 
     try:
-        with open(intermediate_file, "r", encoding="utf-8") as f:
+        with open(intermediate_file, encoding="utf-8") as f:
             results = json.load(f)
     except FileNotFoundError:
         print(f"错误: 未找到中间结果文件 '{intermediate_file}'")

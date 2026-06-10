@@ -1,136 +1,278 @@
 <template>
-    <div class="ai-editor-layout">
-        <!-- 编辑器区：两个编辑器上下排列 -->
-        <div class="editor-panel">
-            <div class="editors-double">
-                <!-- 转写编辑器块，支持折叠/展开 -->
-                <div class="editor-block" :class="{ 'transcribe-collapsed': transcribeCollapsed }">
-                    <div class="editor-label transcribe-label" @click="onTranscribeLabelClick"
-                        style="cursor:pointer;user-select:none;">
-                        <span :class="['triangle', transcribeCollapsed ? '' : 'expanded']">&#9654;</span>
-                        转写
-                    </div>
-                    <transition name="fade">
-                        <div v-show="!transcribeCollapsed" class="editor-content-fixed">
-                            <editor-content :editor="transcribeEditor" />
-                        </div>
-                    </transition>
-                </div>
-                <div class="hint">💡 请选择需要优化的文本</div>
-                <!-- 会议纪要 -->
-                <div class="editor-block" :class="{ 'main-expanded': transcribeCollapsed }">
-                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 0;">
-                        <div class="editor-label" style="font-weight: bold;">会议纪要</div>
-                        <!-- 按钮组 -->
-                        <div class="note-actions" style="display: flex; gap: 8px;">
-                            <button class="preview-toggle-btn" @click="showMarkdownPreview = !showMarkdownPreview"
-                            :disabled="isLoadingSummary"
-                                style="padding: 4px 10px; font-size: 14px; background-color: #95C11F; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                                <i :class="showMarkdownPreview ? 'fa fa-pencil' : 'fa fa-eye'"
-                                    style="margin-right: 4px;"></i>
-                                {{ showMarkdownPreview ? '编辑' : '预览' }}
-                            </button>
-                        </div>
-                    </div>
-                    <div class="editor-content-fixed">
-                        <div v-if="isLoadingSummary" class="loading-container">
-                            <div class="loading-animation">
-                                <div class="pulse-circle"></div>
-                                <div class="pulse-circle"></div>
-                                <div class="pulse-circle"></div>
-                            </div>
-                            <p class="loading-text">正在等待会议纪要生成...</p>
-                            <p class="loading-subtext">将持续检查文件状态</p>
-                        </div>
-                        <template v-else>
-                            <div v-if="showMarkdownPreview" class="markdown-preview" v-html="markdownHtml"></div>
-                            <editor-content v-else-if="!isLoadingSummary" :editor="editor" />
-                        </template>
-                    </div>
-                </div>
+  <div class="ai-editor-layout">
+    <!-- 编辑器区：两个编辑器上下排列 -->
+    <div class="editor-panel">
+      <div class="editors-double">
+        <!-- 转写编辑器块，支持折叠/展开 -->
+        <div
+          class="editor-block"
+          :class="{ 'transcribe-collapsed': transcribeCollapsed }"
+        >
+          <div
+            class="editor-label transcribe-label"
+            style="cursor:pointer;user-select:none;"
+            @click="onTranscribeLabelClick"
+          >
+            <span :class="['triangle', transcribeCollapsed ? '' : 'expanded']">&#9654;</span>
+            转写
+          </div>
+          <transition name="fade">
+            <div
+              v-show="!transcribeCollapsed"
+              class="editor-content-fixed"
+            >
+              <editor-content :editor="transcribeEditor" />
             </div>
-            <div class="button-group" style="margin-top: 12px;">
-                <button @click="runAiCommand('rephrase')" :disabled="isDisabled">改写</button>
-                <button @click="runAiCommand('summarize')" :disabled="isDisabled">总结</button>
-                <button @click="runAiCommand('simplify')" :disabled="isDisabled">简化</button>
-                <button @click="runAiCommand('fixSpelling')" :disabled="isDisabled">纠正拼写</button>
-                <button @click="runAiCommand('translateChinese')" :disabled="isDisabled">翻译为中文</button>
-                <button @click="runAiCommand('translateEnglish')" :disabled="isDisabled">翻译为英语</button>
-            </div>
-            <!-- 底部操作按钮 -->
-            <div class="flex justify-end gap-4 mt-6">
-                <button @click="goBack" class="btn-secondary">
-                    返回
-                </button>
-                <button @click="saveMeetingNote" class="btn-primary">
-                    保存
-                </button>
-            </div>
-            <div v-if="state.errorMessage" class="hint error">{{ state.errorMessage }}</div>
+          </transition>
         </div>
-
-        <!-- 右侧AI结果 -->
-        <div class="ai-result-panel">
-            <div class="ai-result-title">AI辅助优化</div>
-            <div class="ai-chat-history-scroll">
-                <template v-if="chatHistory.length > 0">
-                    <div v-for="(item, idx) in chatHistory" :key="idx" class="chat-item">
-                        <div class="chat-row single">
-                            <div class="chat-user-side">
-                                <div class="chat-bubble user">
-                                    <div class="chat-user"></div>
-                                    <div>{{ item.user }}</div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="chat-row single">
-                            <div class="chat-ai-side">
-                                <div class="chat-bubble ai">
-                                    <div class="chat-ai"></div>
-                                    <div>{{ item.ai }}</div>
-                                </div>
-                                <div class="chat-actions left">
-                                    <button @click="replaceSelectionFromHistory(idx)" :disabled="!item.ai">替代</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </template>
-                <template v-else>
-                    <div class="ai-empty-hint">
-                        <div class="ai-empty-icon">
-                            <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
-                                <circle cx="32" cy="32" r="32" fill="#f0f7f0" />
-                                <path d="M20 44v-2a8 8 0 0 1 8-8h8a8 8 0 0 1 8 8v2" stroke="#6da34d" stroke-width="2"
-                                    stroke-linecap="round" />
-                                <circle cx="24" cy="28" r="2" fill="#6da34d" />
-                                <circle cx="40" cy="28" r="2" fill="#6da34d" />
-                                <path d="M28 36c1.5 2 6.5 2 8 0" stroke="#6da34d" stroke-width="2"
-                                    stroke-linecap="round" />
-                            </svg>
-                        </div>
-                        <div class="ai-empty-text">
-                            说点什么吧！让AI来帮助你理解会议
-                        </div>
-                    </div>
-                </template>
-                <div v-if="state.isLoading" class="hint purple-spinner" style="text-align:center;margin:8px 0;">
-                    <span class="spinner"></span> AI 正在生成中……
-                </div>
-            </div>
-            <div>
-                <div v-if="selectedTextForPrompt" class="selected-bubble">
-                    <span>选中内容：</span>
-                    <div class="chat-bubble user">{{ selectedTextForPrompt }}</div>
-                </div>
-                <div class="ai-custom-prompt">
-                    <input v-model="customPrompt" type="text" placeholder="请输入你的问题或需求"
-                        @keyup.enter="sendCustomPrompt" />
-                    <button @click="sendCustomPrompt" :disabled="!customPrompt || state.isLoading">发送</button>
-                </div>
-            </div>
+        <div class="hint">
+          💡 请选择需要优化的文本
         </div>
+        <!-- 会议纪要 -->
+        <div
+          class="editor-block"
+          :class="{ 'main-expanded': transcribeCollapsed }"
+        >
+          <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 0;">
+            <div
+              class="editor-label"
+              style="font-weight: bold;"
+            >
+              会议纪要
+            </div>
+            <!-- 按钮组 -->
+            <div
+              class="note-actions"
+              style="display: flex; gap: 8px;"
+            >
+              <button
+                class="preview-toggle-btn"
+                :disabled="isLoadingSummary"
+                style="padding: 4px 10px; font-size: 14px; background-color: #95C11F; color: white; border: none; border-radius: 4px; cursor: pointer;"
+                @click="showMarkdownPreview = !showMarkdownPreview"
+              >
+                <i
+                  :class="showMarkdownPreview ? 'fa fa-pencil' : 'fa fa-eye'"
+                  style="margin-right: 4px;"
+                />
+                {{ showMarkdownPreview ? '编辑' : '预览' }}
+              </button>
+            </div>
+          </div>
+          <div class="editor-content-fixed">
+            <div
+              v-if="isLoadingSummary"
+              class="loading-container"
+            >
+              <div class="loading-animation">
+                <div class="pulse-circle" />
+                <div class="pulse-circle" />
+                <div class="pulse-circle" />
+              </div>
+              <p class="loading-text">
+                正在等待会议纪要生成...
+              </p>
+              <p class="loading-subtext">
+                将持续检查文件状态
+              </p>
+            </div>
+            <template v-else>
+              <div
+                v-if="showMarkdownPreview"
+                class="markdown-preview"
+                v-html="markdownHtml"
+              />
+              <editor-content
+                v-else-if="!isLoadingSummary"
+                :editor="editor"
+              />
+            </template>
+          </div>
+        </div>
+      </div>
+      <div
+        class="button-group"
+        style="margin-top: 12px;"
+      >
+        <button
+          :disabled="isDisabled"
+          @click="runAiCommand('rephrase')"
+        >
+          改写
+        </button>
+        <button
+          :disabled="isDisabled"
+          @click="runAiCommand('summarize')"
+        >
+          总结
+        </button>
+        <button
+          :disabled="isDisabled"
+          @click="runAiCommand('simplify')"
+        >
+          简化
+        </button>
+        <button
+          :disabled="isDisabled"
+          @click="runAiCommand('fixSpelling')"
+        >
+          纠正拼写
+        </button>
+        <button
+          :disabled="isDisabled"
+          @click="runAiCommand('translateChinese')"
+        >
+          翻译为中文
+        </button>
+        <button
+          :disabled="isDisabled"
+          @click="runAiCommand('translateEnglish')"
+        >
+          翻译为英语
+        </button>
+      </div>
+      <!-- 底部操作按钮 -->
+      <div class="flex justify-end gap-4 mt-6">
+        <button
+          class="btn-secondary"
+          @click="goBack"
+        >
+          返回
+        </button>
+        <button
+          class="btn-primary"
+          @click="saveMeetingNote"
+        >
+          保存
+        </button>
+      </div>
+      <div
+        v-if="state.errorMessage"
+        class="hint error"
+      >
+        {{ state.errorMessage }}
+      </div>
     </div>
+
+    <!-- 右侧AI结果 -->
+    <div class="ai-result-panel">
+      <div class="ai-result-title">
+        AI辅助优化
+      </div>
+      <div class="ai-chat-history-scroll">
+        <template v-if="chatHistory.length > 0">
+          <div
+            v-for="(item, idx) in chatHistory"
+            :key="idx"
+            class="chat-item"
+          >
+            <div class="chat-row single">
+              <div class="chat-user-side">
+                <div class="chat-bubble user">
+                  <div class="chat-user" />
+                  <div>{{ item.user }}</div>
+                </div>
+              </div>
+            </div>
+            <div class="chat-row single">
+              <div class="chat-ai-side">
+                <div class="chat-bubble ai">
+                  <div class="chat-ai" />
+                  <div>{{ item.ai }}</div>
+                </div>
+                <div class="chat-actions left">
+                  <button
+                    :disabled="!item.ai"
+                    @click="replaceSelectionFromHistory(idx)"
+                  >
+                    替代
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+        <template v-else>
+          <div class="ai-empty-hint">
+            <div class="ai-empty-icon">
+              <svg
+                width="64"
+                height="64"
+                viewBox="0 0 64 64"
+                fill="none"
+              >
+                <circle
+                  cx="32"
+                  cy="32"
+                  r="32"
+                  fill="#f0f7f0"
+                />
+                <path
+                  d="M20 44v-2a8 8 0 0 1 8-8h8a8 8 0 0 1 8 8v2"
+                  stroke="#6da34d"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                />
+                <circle
+                  cx="24"
+                  cy="28"
+                  r="2"
+                  fill="#6da34d"
+                />
+                <circle
+                  cx="40"
+                  cy="28"
+                  r="2"
+                  fill="#6da34d"
+                />
+                <path
+                  d="M28 36c1.5 2 6.5 2 8 0"
+                  stroke="#6da34d"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                />
+              </svg>
+            </div>
+            <div class="ai-empty-text">
+              说点什么吧！让AI来帮助你理解会议
+            </div>
+          </div>
+        </template>
+        <div
+          v-if="state.isLoading"
+          class="hint purple-spinner"
+          style="text-align:center;margin:8px 0;"
+        >
+          <span class="spinner" /> AI 正在生成中……
+        </div>
+      </div>
+      <div>
+        <div
+          v-if="selectedTextForPrompt"
+          class="selected-bubble"
+        >
+          <span>选中内容：</span>
+          <div class="chat-bubble user">
+            {{ selectedTextForPrompt }}
+          </div>
+        </div>
+        <div class="ai-custom-prompt">
+          <input
+            v-model="customPrompt"
+            type="text"
+            placeholder="请输入你的问题或需求"
+            @keyup.enter="sendCustomPrompt"
+          >
+          <button
+            :disabled="!customPrompt || state.isLoading"
+            @click="sendCustomPrompt"
+          >
+            发送
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script>
@@ -215,6 +357,67 @@ export default defineComponent({
                 .trim()
 
             return DOMPurify.sanitize(marked.parse(markdownText))
+        }
+    },
+
+    watch: {
+        chatHistory() {
+            this.$nextTick(() => {
+                const chatScroll = this.$el.querySelector('.ai-chat-history-scroll')
+                if (chatScroll) chatScroll.scrollTop = chatScroll.scrollHeight
+            })
+        }
+    },
+
+    mounted() {
+        this.sid = this.$route.query.sid || ''
+        this.initOpenAI()
+        this.startSummaryCheck()
+        this.fetchMeetingData()
+        this.editor = new Editor({
+            extensions: [
+                StarterKit,
+                new Plugin({
+                    props: {
+                        decorations: () => null
+                    }
+                })
+            ],
+            content: '',
+            parseOptions: {
+                preserveWhitespace: true,
+            },
+            onSelectionUpdate: ({ editor }) => {
+                const { from, to } = editor.state.selection
+                this.highlightRange = from !== to ? { from, to } : null
+            }
+        })
+        this.transcribeEditor = new Editor({
+            extensions: [StarterKit],
+            content: '',
+        })
+        this.editor.registerPlugin(new Plugin({
+            props: {
+                decorations: (state) => {
+                    if (!this.highlightRange) return null
+                    const { from, to } = this.highlightRange
+                    return DecorationSet.create(state.doc, [
+                        Decoration.inline(from, to, { class: 'ai-highlight' })
+                    ])
+                }
+            }
+        }))
+        this.$nextTick(() => {
+            const chatScroll = this.$el.querySelector('.ai-chat-history-scroll')
+            if (chatScroll) chatScroll.scrollTop = chatScroll.scrollHeight
+        })
+    },
+
+    beforeUnmount() {
+        this.editor?.destroy()
+        this.transcribeEditor?.destroy()
+        if (this.summaryCheckInterval) {
+            clearInterval(this.summaryCheckInterval)
         }
     },
 
@@ -447,67 +650,6 @@ export default defineComponent({
                 const sidQuery = this.sid ? `?sid=${this.sid}` : ''
                 this.$router.push(`/templates${sidQuery}`)
             }
-        }
-    },
-
-    watch: {
-        chatHistory() {
-            this.$nextTick(() => {
-                const chatScroll = this.$el.querySelector('.ai-chat-history-scroll')
-                if (chatScroll) chatScroll.scrollTop = chatScroll.scrollHeight
-            })
-        }
-    },
-
-    mounted() {
-        this.sid = this.$route.query.sid || ''
-        this.initOpenAI()
-        this.startSummaryCheck()
-        this.fetchMeetingData()
-        this.editor = new Editor({
-            extensions: [
-                StarterKit,
-                new Plugin({
-                    props: {
-                        decorations: () => null
-                    }
-                })
-            ],
-            content: '',
-            parseOptions: {
-                preserveWhitespace: true,
-            },
-            onSelectionUpdate: ({ editor }) => {
-                const { from, to } = editor.state.selection
-                this.highlightRange = from !== to ? { from, to } : null
-            }
-        })
-        this.transcribeEditor = new Editor({
-            extensions: [StarterKit],
-            content: '',
-        })
-        this.editor.registerPlugin(new Plugin({
-            props: {
-                decorations: (state) => {
-                    if (!this.highlightRange) return null
-                    const { from, to } = this.highlightRange
-                    return DecorationSet.create(state.doc, [
-                        Decoration.inline(from, to, { class: 'ai-highlight' })
-                    ])
-                }
-            }
-        }))
-        this.$nextTick(() => {
-            const chatScroll = this.$el.querySelector('.ai-chat-history-scroll')
-            if (chatScroll) chatScroll.scrollTop = chatScroll.scrollHeight
-        })
-    },
-
-    beforeUnmount() {
-        this.editor?.destroy()
-        this.transcribeEditor?.destroy()
-        if (this.summaryCheckInterval) {
-            clearInterval(this.summaryCheckInterval)
         }
     },
 })

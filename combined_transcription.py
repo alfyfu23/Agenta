@@ -1,14 +1,16 @@
-from funasr import AutoModel
-from funasr.utils.postprocess_utils import rich_transcription_postprocess
-import sys
-import json
-import time
 import asyncio
+import json
 import os
-from langchain_openai import ChatOpenAI
+import re
+import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-import re
+
+from funasr import AutoModel
+from funasr.utils.postprocess_utils import rich_transcription_postprocess
+from langchain_openai import ChatOpenAI
+
 
 def chunk_text_with_overlap(text):
     sentence_end_pattern = r'(?<=[。！？!?\.\?!])\s*'
@@ -63,11 +65,11 @@ async def process_transcription(session_dir):
     )
 
     prompt_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompt_tra.txt")
-    with open(prompt_file, "r", encoding="utf-8") as f:
+    with open(prompt_file, encoding="utf-8") as f:
         fixed_prompt = f.read()
 
     transcription_file = os.path.join(session_dir, "transcription_result.txt")
-    with open(transcription_file, "r", encoding="utf-8") as f:
+    with open(transcription_file, encoding="utf-8") as f:
         user_input = f.read()
 
     chunks = chunk_text_with_overlap(user_input)

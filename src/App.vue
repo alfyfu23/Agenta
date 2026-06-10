@@ -1,10 +1,15 @@
 <template>
-  <div id="app" class="bg-light text-gray-800 font-sans min-h-screen flex overflow-hidden">
+  <div
+    id="app"
+    class="bg-light text-gray-800 font-sans min-h-screen flex overflow-hidden"
+  >
     <!-- 左侧导航栏 -->
     <aside class="w-auto bg-white border-r border-border flex flex-col h-screen">
       <!-- Agenta标识 -->
       <div class="h-16 p-4 md:p-6 border-b border-border min-w-[120px]">
-        <h1 class="text-xl font-bold text-primary">Agenta</h1>
+        <h1 class="text-xl font-bold text-primary">
+          Agenta
+        </h1>
       </div>
 
       <!-- 导航菜单 -->
@@ -13,7 +18,7 @@
           class="sidebar-item active whitespace-nowrap" 
           @click="handleNewMeeting"
         >
-          <i class="fa fa-plus w-5 text-center"></i>
+          <i class="fa fa-plus w-5 text-center" />
           <span>新建会议</span>
         </div>
       </nav>
@@ -30,7 +35,7 @@
             :class="currentStep >= 1 ? 'text-primary' : 'text-neutral'"
             style="pointer-events: none;"
           >
-            <i class="fa fa-microphone text-lg"></i>
+            <i class="fa fa-microphone text-lg" />
             <span>上传语音</span>
           </div>
           <div 
@@ -38,7 +43,7 @@
             :class="currentStep >= 2 ? 'text-primary' : 'text-neutral'"
             style="pointer-events: none;"
           >
-            <i class="fa fa-file-text-o text-lg"></i>
+            <i class="fa fa-file-text-o text-lg" />
             <span>文字转写</span>
           </div>
           <div 
@@ -46,7 +51,7 @@
             :class="currentStep >= 3 ? 'text-primary' : 'text-neutral'"
             style="pointer-events: none;"
           >
-            <i class="fa fa-th-large text-lg"></i>
+            <i class="fa fa-th-large text-lg" />
             <span>模板选择</span>
           </div>
           <div 
@@ -54,7 +59,7 @@
             :class="currentStep >= 4 ? 'text-primary' : 'text-neutral'"
             style="pointer-events: none;"
           >
-            <i class="fa fa-file-text text-lg"></i>
+            <i class="fa fa-file-text text-lg" />
             <span>生成纪要</span>
           </div>
         </div>

@@ -1,11 +1,12 @@
+import os
+import secrets
+import subprocess
+import sys
 import threading
 import uuid
-from flask import Flask, request, jsonify, send_from_directory, session
+
+from flask import Flask, jsonify, request, send_from_directory, session
 from flask_cors import CORS
-import os
-import sys
-import subprocess
-import secrets
 from werkzeug.utils import secure_filename
 
 try:
@@ -137,11 +138,11 @@ def check_transcription():
     session_dir = _get_session_dir()
     error_file = os.path.join(session_dir, "error.txt")
     if os.path.exists(error_file):
-        with open(error_file, "r", encoding="utf-8") as f:
+        with open(error_file, encoding="utf-8") as f:
             return jsonify({'completed': True, 'error': f.read()})
     result_file = os.path.join(session_dir, "combined_output.txt")
     if os.path.exists(result_file) and os.path.getsize(result_file) > 0:
-        with open(result_file, "r", encoding="utf-8") as f:
+        with open(result_file, encoding="utf-8") as f:
             transcription = f.read()
         return jsonify({
             'completed': True,
@@ -180,7 +181,7 @@ def get_summary():
     session_dir = _get_session_dir()
     error_file = os.path.join(session_dir, "error.txt")
     if os.path.exists(error_file):
-        with open(error_file, "r", encoding="utf-8") as f:
+        with open(error_file, encoding="utf-8") as f:
             return jsonify({'error': f.read()}), 500
     return send_from_directory(session_dir, 'summary.md')
 

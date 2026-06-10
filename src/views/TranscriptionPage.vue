@@ -1,38 +1,56 @@
 <template>
-    <div class="p-6 md:p-8">
-        <!-- 进度提示和进度条 -->
-        <div class="mb-6">
-            <div class="flex justify-between items-center mb-2">
-                <p class="text-neutral">{{ progressText }}</p>
-            </div>
-            <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
-                <div class="h-full bg-primary rounded-full transition-all duration-500"
-                    :style="{ width: progressBarWidth + '%' }"></div>
-            </div>
-        </div>
-
-        <!-- 对话内容区域 -->
-        <div class="border-2 border-dashed border-border rounded-xl p-6 mb-8 min-h-[300px]">
-            <div class="mb-6">
-                <p class="text-gray-600 text-lg" style="white-space: pre-wrap;">{{ transcription }}</p>
-            </div>
-        </div>
-
-        <!-- 底部操作按钮 -->
-        <div class="flex justify-between items-center">
-            <button @click="exportTranscription" class="btn-secondary">
-                直接保存
-            </button>
-            <div class="flex gap-3">
-                <button @click="goBack" class="btn-secondary">
-                    返回
-                </button>
-                <button @click="goNext" class="btn-primary">
-                    下一步
-                </button>
-            </div>
-        </div>
+  <div class="p-6 md:p-8">
+    <!-- 进度提示和进度条 -->
+    <div class="mb-6">
+      <div class="flex justify-between items-center mb-2">
+        <p class="text-neutral">
+          {{ progressText }}
+        </p>
+      </div>
+      <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
+        <div
+          class="h-full bg-primary rounded-full transition-all duration-500"
+          :style="{ width: progressBarWidth + '%' }"
+        />
+      </div>
     </div>
+
+    <!-- 对话内容区域 -->
+    <div class="border-2 border-dashed border-border rounded-xl p-6 mb-8 min-h-[300px]">
+      <div class="mb-6">
+        <p
+          class="text-gray-600 text-lg"
+          style="white-space: pre-wrap;"
+        >
+          {{ transcription }}
+        </p>
+      </div>
+    </div>
+
+    <!-- 底部操作按钮 -->
+    <div class="flex justify-between items-center">
+      <button
+        class="btn-secondary"
+        @click="exportTranscription"
+      >
+        直接保存
+      </button>
+      <div class="flex gap-3">
+        <button
+          class="btn-secondary"
+          @click="goBack"
+        >
+          返回
+        </button>
+        <button
+          class="btn-primary"
+          @click="goNext"
+        >
+          下一步
+        </button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script>
