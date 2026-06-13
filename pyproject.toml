@@ -24,4 +24,4 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["combined_transcription", "summary", "SenseVoiceSmall"]
+known-first-party = ["main", "combined_transcription", "summary"]

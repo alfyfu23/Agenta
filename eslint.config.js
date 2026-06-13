@@ -16,6 +16,7 @@ export default [
                 setTimeout: 'readonly',
                 setInterval: 'readonly',
                 clearInterval: 'readonly',
+                clearTimeout: 'readonly',
                 URL: 'readonly',
                 Blob: 'readonly',
                 fetch: 'readonly',
@@ -23,7 +24,8 @@ export default [
                 confirm: 'readonly',
                 FormData: 'readonly',
                 File: 'readonly',
-                XMLHttpRequest: 'readonly',
+                navigator: 'readonly',
+                location: 'readonly',
             },
         },
         rules: {
@@ -34,7 +36,6 @@ export default [
             'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
             'no-console': 'warn',
             'no-empty': ['error', { allowEmptyCatch: true }],
-            'no-undef': 'off',
         },
     },
     {

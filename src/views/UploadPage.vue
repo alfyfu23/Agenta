@@ -148,13 +148,6 @@
             class="w-full px-4 py-3 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
           >
         </div>
-        <p
-          v-if="nameSaveStatus.show"
-          class="mt-2 text-sm"
-          :class="nameSaveStatus.class"
-        >
-          {{ nameSaveStatus.text }}
-        </p>
       </div>
 
       <!-- 音频转写提示 -->
@@ -174,7 +167,7 @@
 </template>
 
 <script>
-import { ref, computed } from 'vue'
+import { ref, computed, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 
@@ -201,11 +194,7 @@ export default {
             icon: ''
         })
 
-        const nameSaveStatus = ref({
-            show: false,
-            text: '',
-            class: ''
-        })
+        let statusTimeout = null
 
         // 计算属性
         const fileIconClass = computed(() => {
@@ -291,8 +280,8 @@ export default {
                     showStatus('错误', response.data.error, 'error')
                 }
             } catch (error) {
-                showStatus('错误', '上传失败，请重试', 'error')
-                console.error('上传错误:', error)
+                const errMsg = error.response?.data?.error || '上传失败，请重试'
+                showStatus('错误', errMsg, 'error')
             } finally {
                 isUploading.value = false
             }
@@ -307,9 +296,9 @@ export default {
                 icon: getStatusIcon(type)
             }
 
-            // 自动隐藏成功和信息类消息
             if (type === 'success' || type === 'info') {
-                setTimeout(hideStatus, 5000)
+                if (statusTimeout) clearTimeout(statusTimeout)
+                statusTimeout = setTimeout(hideStatus, 5000)
             }
         }
 
@@ -371,10 +360,14 @@ export default {
             const dm = decimals < 0 ? 0 : decimals
             const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB']
 
-            const i = Math.floor(Math.log(bytes) / Math.log(k))
+            const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1)
 
             return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i]
         }
+
+        onUnmounted(() => {
+            if (statusTimeout) clearTimeout(statusTimeout)
+        })
 
         return {
             selectedFile,
@@ -384,7 +377,6 @@ export default {
             meetingName,
             showTranscriptionHint,
             statusMessage,
-            nameSaveStatus,
             fileIconClass,
             handleDrop,
             handleFileSelect,

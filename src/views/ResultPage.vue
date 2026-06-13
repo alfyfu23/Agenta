@@ -83,7 +83,7 @@
                 v-html="markdownHtml"
               />
               <editor-content
-                v-else-if="!isLoadingSummary"
+                v-else
                 :editor="editor"
               />
             </template>
@@ -426,13 +426,10 @@ export default defineComponent({
                     throw new Error('获取summary.md失败')
                 }
                 let rawText = await response.text()
-                const markdownContent = rawText
-                    .replace(/\r\n/g, '<br>') // 处理 Windows 换行
-                    .replace(/\r/g, '<br>')   // 处理老式 Mac 换行
-                    .replace(/\n/g, '<br>')   // 处理 Unix 换行
-                this.editor?.commands.setContent(markdownContent)
-                this.isLoadingSummary = false // 加载成功，隐藏加载状态
-                return true // 表示成功获取
+                this.editor?.commands.setContent(rawText, false, { preserveWhitespace: true })
+                this.contentVersion++
+                this.isLoadingSummary = false
+                return true
             } catch (error) {
                 console.log('当前未获取到summary.md，将继续尝试:', error.message)
                 return false // 表示获取失败
@@ -469,11 +466,7 @@ export default defineComponent({
                     throw new Error('获取转写失败')
                 }
                 let rawText = await response.text()
-                const formattedText = rawText
-                    .replace(/\r\n/g, '<br>') // 处理 Windows 换行
-                    .replace(/\r/g, '<br>')   // 处理老式 Mac 换行
-                    .replace(/\n/g, '<br>')   // 处理 Unix 换行
-                this.transcribeEditor?.commands.setContent(formattedText)
+                this.transcribeEditor?.commands.setContent(rawText, false, { preserveWhitespace: true })
                 return true
             } catch (error) {
                 console.log('当前未获取到转写，将继续尝试:', error.message)
@@ -588,23 +581,18 @@ export default defineComponent({
         },
 
         saveMeetingNote() {
-            // 获取会议纪要内容（用markdown格式）
             const note = this.editor?.getText() || ''
-            // 生成文件名，带时间戳，md后缀
-            const filename = `会议纪要_${new Date().toLocaleDateString().replace(/\//g, '-')}_${new Date().toLocaleTimeString().replace(/:/g, '-')}.md`
-            // 创建Blob并下载
+            const now = new Date()
+            const pad = n => String(n).padStart(2, '0')
+            const filename = `会议纪要_${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.md`
             const blob = new Blob([note], { type: 'text/markdown;charset=utf-8' })
-            if (window.navigator.msSaveOrOpenBlob) {
-                window.navigator.msSaveOrOpenBlob(blob, filename)
-            } else {
-                const link = document.createElement('a')
-                link.href = URL.createObjectURL(blob)
-                link.download = filename
-                document.body.appendChild(link)
-                link.click()
-                document.body.removeChild(link)
-                URL.revokeObjectURL(link.href)
-            }
+            const link = document.createElement('a')
+            link.href = URL.createObjectURL(blob)
+            link.download = filename
+            document.body.appendChild(link)
+            link.click()
+            document.body.removeChild(link)
+            URL.revokeObjectURL(link.href)
         },
 
         goBack() {
@@ -756,7 +744,6 @@ $transition: all 0.25s ease; // 统一过渡动画
     flex-wrap: wrap;
     gap: 8px;
     margin: 12px 0 0 0;
-    padding-bottom: border-box;
 
     button {
         background: $primary;

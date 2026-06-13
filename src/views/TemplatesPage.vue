@@ -278,6 +278,7 @@ export default {
                             text: '上传成功: ' + file.name,
                             class: 'text-green-500'
                         }
+                        if (customFileInput.value) customFileInput.value.value = ''
                     } else {
                         fileInfo.value = {
                             show: true,

@@ -7,11 +7,7 @@
     "jsx": "preserve",
     "noEmit": true,
     "allowJs": true,
-    "skipLibCheck": true,
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["src/*"]
-    }
+    "skipLibCheck": true
   },
   "include": ["src/**/*.js", "src/**/*.vue", "vite.config.js"],
   "exclude": ["node_modules", "dist"]

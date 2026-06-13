@@ -82,12 +82,12 @@ export default {
         const progressText = ref('准备转写...')
         const progressBarWidth = ref(0)
         const transcription = ref('')
-        const isCompleted = ref(false)
         const errorMessage = ref('')
 
         let progressInterval = null
         let checkInterval = null
         let pollCount = 0
+        let isDone = false
         const sid = ref('')
 
         // 模拟进度条动画
@@ -124,7 +124,7 @@ export default {
                     progressBarWidth.value = 100
                     progressText.value = '转写完成'
                     transcription.value = data.transcription
-                    isCompleted.value = true
+                    isDone = true
                 }
             } catch (error) {
                 console.error('检查转写结果出错:', error)
@@ -159,9 +159,7 @@ export default {
             setTimeout(() => {
                 document.body.removeChild(a)
                 URL.revokeObjectURL(url)
-            }, 0)
-
-            alert('转写结果已成功保存')
+            }, 100)
         }
 
         // 返回上一页
@@ -180,7 +178,7 @@ export default {
             const delay = pollCount < 10 ? 1000 : pollCount < 30 ? 2000 : 5000
             checkInterval = setTimeout(async () => {
                 await checkTranscription()
-                if (!isCompleted.value && !errorMessage.value) {
+                if (!isDone && !errorMessage.value) {
                     scheduleNextPoll()
                 }
             }, delay)
@@ -201,7 +199,6 @@ export default {
             progressText,
             progressBarWidth,
             transcription,
-            isCompleted,
             errorMessage,
             exportTranscription,
             goBack,

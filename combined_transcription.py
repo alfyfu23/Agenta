@@ -12,8 +12,8 @@ from funasr.utils.postprocess_utils import rich_transcription_postprocess
 from langchain_openai import ChatOpenAI
 
 
-def chunk_text_with_overlap(text):
-    sentence_end_pattern = r'(?<=[。！？!?\.\?!])\s*'
+def chunk_text(text):
+    sentence_end_pattern = r'(?<=[。！？.!?])\s*'
     sentences = re.split(sentence_end_pattern, text)
     sentences = [s for s in sentences if s.strip()]
 
@@ -24,6 +24,10 @@ def chunk_text_with_overlap(text):
 
     for sentence in sentences:
         sentence_char_count = len(sentence)
+        if sentence_char_count > target_chars and not current_chunk:
+            for i in range(0, sentence_char_count, target_chars):
+                chunks.append(sentence[i:i + target_chars])
+            continue
         if current_char_count + sentence_char_count > target_chars and current_chunk:
             chunks.append(''.join(current_chunk))
             current_chunk = [sentence]
@@ -75,7 +79,7 @@ async def process_transcription(session_dir):
     with open(transcription_file, encoding="utf-8") as f:
         user_input = f.read()
 
-    chunks = chunk_text_with_overlap(user_input)
+    chunks = chunk_text(user_input)
     print(f"开始处理 {len(chunks)} 个文本块...")
     start_time = time.time()
 
@@ -89,7 +93,7 @@ async def process_transcription(session_dir):
     total_time = time.time() - start_time
     print(f"所有文本块处理完成，总耗时: {total_time:.2f} 秒")
 
-    combined_output = "".join(results)
+    combined_output = "\n".join(results)
     output_file = os.path.join(session_dir, "combined_output.txt")
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(combined_output)
