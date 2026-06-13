@@ -12,8 +12,9 @@ from funasr.utils.postprocess_utils import rich_transcription_postprocess
 from langchain_openai import ChatOpenAI
 
 
-def chunk_text(text):
-    sentence_end_pattern = r'(?<=[。！？.!?])\s*'
+def chunk_text(text: str) -> list[str]:
+    """Split text into chunks of ~1250 chars at sentence boundaries (。！？.!?)."""
+    sentence_end_pattern = r"(?<=[。！？.!?])\s*"
     sentences = re.split(sentence_end_pattern, text)
     sentences = [s for s in sentences if s.strip()]
 
@@ -26,10 +27,10 @@ def chunk_text(text):
         sentence_char_count = len(sentence)
         if sentence_char_count > target_chars and not current_chunk:
             for i in range(0, sentence_char_count, target_chars):
-                chunks.append(sentence[i:i + target_chars])
+                chunks.append(sentence[i : i + target_chars])
             continue
         if current_char_count + sentence_char_count > target_chars and current_chunk:
-            chunks.append(''.join(current_chunk))
+            chunks.append("".join(current_chunk))
             current_chunk = [sentence]
             current_char_count = sentence_char_count
         else:
@@ -37,28 +38,29 @@ def chunk_text(text):
             current_char_count += sentence_char_count
 
     if current_chunk:
-        chunks.append(''.join(current_chunk))
+        chunks.append("".join(current_chunk))
 
     return chunks
 
 
 async def process_chunk(executor, loop, llm, fixed_prompt, chunk, chunk_index, total_chunks):
     start_time = time.time()
-    print(f"正在处理第 {chunk_index+1}/{total_chunks} 个文本块...")
+    print(f"正在处理第 {chunk_index + 1}/{total_chunks} 个文本块...")
 
     input_text = fixed_prompt + "\n\n" + chunk
 
     try:
         r = await loop.run_in_executor(executor, partial(llm.invoke, input_text))
         elapsed_time = time.time() - start_time
-        print(f"第 {chunk_index+1} 个文本块处理完成，耗时: {elapsed_time:.2f} 秒")
+        print(f"第 {chunk_index + 1} 个文本块处理完成，耗时: {elapsed_time:.2f} 秒")
         return r.content
     except Exception as e:
-        print(f"第 {chunk_index+1} 个文本块处理失败: {e}")
+        print(f"第 {chunk_index + 1} 个文本块处理失败: {e}")
         return f"[该片段校对失败: {e}]"
 
 
-async def process_transcription(session_dir):
+async def process_transcription(session_dir: str) -> None:
+    """Run AI proofreading on the transcription text in session_dir."""
     api_key = os.environ.get("DEEPSEEK_API_KEY", "")
     if not api_key:
         raise ValueError("请设置环境变量 DEEPSEEK_API_KEY")
@@ -71,7 +73,7 @@ async def process_transcription(session_dir):
         max_tokens=8192,
     )
 
-    prompt_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompt_tra.txt")
+    prompt_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompts", "prompt_tra.txt")
     with open(prompt_file, encoding="utf-8") as f:
         fixed_prompt = f.read()
 
@@ -106,11 +108,14 @@ async def process_transcription(session_dir):
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(SCRIPT_DIR)
 
 
-def _get_device():
+def _get_device() -> str:
+    """Detect best available compute device (CUDA or CPU)."""
     try:
         import torch
+
         if torch.cuda.is_available():
             return "cuda:0"
     except ImportError:
@@ -130,9 +135,9 @@ def main():
     print(f"使用设备: {device}")
     print("正在加载SenseVoice模型...")
     model = AutoModel(
-        model=os.path.join(SCRIPT_DIR, "model", "SenseVoiceSmall"),
+        model=os.path.join(ROOT_DIR, "model", "SenseVoiceSmall"),
         trust_remote_code=False,
-        vad_model=os.path.join(SCRIPT_DIR, "model", "speech_fsmn_vad_zh-cn-16k-common-pytorch"),
+        vad_model=os.path.join(ROOT_DIR, "model", "speech_fsmn_vad_zh-cn-16k-common-pytorch"),
         vad_kwargs={"max_single_segment_time": 30000},
         device=device,
         disable_tqdm=True,
@@ -164,6 +169,7 @@ def main():
 
     print("开始处理转录文本...")
     asyncio.run(process_transcription(session_dir))
+
 
 if __name__ == "__main__":
     main()

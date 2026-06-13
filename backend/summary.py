@@ -13,35 +13,37 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 MEETING_TYPE_CONFIG = {
     "progress": {
-        "extraction_prompt": "ex_prompt_project.txt",
-        "template": "template_project.md",
-        "description": "项目进度、计划和任务分配"
+        "extraction_prompt": os.path.join("prompts", "ex_prompt_project.txt"),
+        "template": os.path.join("templates", "template_project.md"),
+        "description": "项目进度、计划和任务分配",
     },
     "discussion": {
-        "extraction_prompt": "ex_prompt_problem.txt",
-        "template": "template_problem.md",
-        "description": "问题分析、解决方案和责任人"
+        "extraction_prompt": os.path.join("prompts", "ex_prompt_problem.txt"),
+        "template": os.path.join("templates", "template_problem.md"),
+        "description": "问题分析、解决方案和责任人",
     },
     "lecture": {
-        "extraction_prompt": "ex_prompt_study.txt",
-        "template": "template_study.md",
-        "description": "知识分享、学习心得和应用计划"
+        "extraction_prompt": os.path.join("prompts", "ex_prompt_study.txt"),
+        "template": os.path.join("templates", "template_study.md"),
+        "description": "知识分享、学习心得和应用计划",
     },
     "custom": {
-        "extraction_prompt": "ex_prompt_custom.txt",
+        "extraction_prompt": os.path.join("prompts", "ex_prompt_custom.txt"),
         "template": "template_custom.md",
-        "description": "自定义会议类型"
-    }
+        "description": "自定义会议类型",
+    },
 }
 
 
-def _escape_braces(text):
-    return text.replace('{', '{{').replace('}', '}}')
+def _escape_braces(text: str) -> str:
+    """Escape all { } as {{ }} to prevent PromptTemplate misinterpretation."""
+    return text.replace("{", "{{").replace("}", "}}")
 
 
-def _restore_placeholders(text, vars_list):
+def _restore_placeholders(text: str, vars_list: list[str]) -> str:
+    """Restore {key_points} etc. from {{key_points}} after escaping."""
     for var in vars_list:
-        text = text.replace('{{' + var + '}}', '{' + var + '}')
+        text = text.replace("{{" + var + "}}", "{" + var + "}")
     return text
 
 
@@ -52,10 +54,7 @@ async def extract_key_point(executor, loop, llm, extraction_prompt, result, inde
     input_text = extraction_prompt + "\n\n" + result
 
     try:
-        response = await loop.run_in_executor(
-            executor,
-            partial(llm.invoke, input_text)
-        )
+        response = await loop.run_in_executor(executor, partial(llm.invoke, input_text))
         elapsed_time = time.time() - start_time
         print(f"第 {index + 1} 个结果要点提炼完成，耗时: {elapsed_time:.2f} 秒")
         return response.content
@@ -64,7 +63,8 @@ async def extract_key_point(executor, loop, llm, extraction_prompt, result, inde
         return f"[该片段处理失败: {e}]"
 
 
-async def extract_key_points(results, extraction_prompt_file, api_key):
+async def extract_key_points(results: list[str], extraction_prompt_file: str, api_key: str) -> list[str]:
+    """Concurrently extract key points from each text chunk using LLM."""
     llm = ChatOpenAI(
         openai_api_key=api_key,
         base_url="https://api.deepseek.com",
@@ -91,15 +91,16 @@ async def extract_key_points(results, extraction_prompt_file, api_key):
     return key_points
 
 
-async def load_prompt(meeting_type, user_prompt_file, template_file):
+async def load_prompt(meeting_type: str, user_prompt_file: str, template_file: str) -> PromptTemplate | None:
+    """Load and assemble the final prompt template from instruction + user prompt + template file."""
     try:
-        with open(template_file, encoding='utf-8') as f:
+        with open(template_file, encoding="utf-8") as f:
             template_content = f.read()
 
         if meeting_type == "custom":
             try:
-                instruction_file = os.path.join(SCRIPT_DIR, "custom.md")
-                with open(instruction_file, encoding='utf-8') as f:
+                instruction_file = os.path.join(SCRIPT_DIR, "prompts", "custom.md")
+                with open(instruction_file, encoding="utf-8") as f:
                     instructions = f.read()
                 template_content = instructions + "\n\n" + template_content
             except Exception as e:
@@ -107,7 +108,7 @@ async def load_prompt(meeting_type, user_prompt_file, template_file):
 
         if user_prompt_file:
             try:
-                with open(user_prompt_file, encoding='utf-8') as f:
+                with open(user_prompt_file, encoding="utf-8") as f:
                     user_prompt = f.read()
                 template_content = user_prompt + "\n\n" + template_content
             except Exception as e:
@@ -121,10 +122,7 @@ async def load_prompt(meeting_type, user_prompt_file, template_file):
         if not input_vars:
             input_vars = placeholder_vars
 
-        return PromptTemplate(
-            template=template_content,
-            input_variables=input_vars
-        )
+        return PromptTemplate(template=template_content, input_variables=input_vars)
     except Exception as e:
         print(f"加载提示词模板失败: {e}")
         return None
@@ -132,16 +130,16 @@ async def load_prompt(meeting_type, user_prompt_file, template_file):
 
 async def load_meeting_info(file_path):
     try:
-        with open(file_path, encoding='utf-8') as f:
+        with open(file_path, encoding="utf-8") as f:
             content = f.read()
 
         meeting_info = {}
-        for line in content.strip().split('\n'):
-            if ':' in line:
-                key, value = line.split(':', 1)
+        for line in content.strip().split("\n"):
+            if ":" in line:
+                key, value = line.split(":", 1)
                 meeting_info[key.strip()] = value.strip()
 
-        required_fields = ['时间', '参会人', '记录人']
+        required_fields = ["时间", "参会人", "记录人"]
         for field in required_fields:
             if field not in meeting_info:
                 print(f"会议信息文件缺少必要字段: {field}")
@@ -161,7 +159,7 @@ async def load_meeting_info(file_path):
 
 async def load_title(file_path):
     try:
-        with open(file_path, encoding='utf-8') as f:
+        with open(file_path, encoding="utf-8") as f:
             content = f.read().strip()
         return content if content else "未命名会议"
     except Exception as e:
@@ -169,7 +167,16 @@ async def load_title(file_path):
         return "未命名会议"
 
 
-async def generate_final_report(key_points, api_key, meeting_type, prompt_file, user_prompt_file, meeting_info_file, title_file):
+async def generate_final_report(
+    key_points: list[str],
+    api_key: str,
+    meeting_type: str,
+    prompt_file: str,
+    user_prompt_file: str,
+    meeting_info_file: str,
+    title_file: str,
+) -> str | None:
+    """Generate the final meeting minutes by feeding key points into the prompt template."""
     llm = ChatOpenAI(
         openai_api_key=api_key,
         base_url="https://api.deepseek.com",
@@ -179,7 +186,7 @@ async def generate_final_report(key_points, api_key, meeting_type, prompt_file, 
         top_p=0.9,
         frequency_penalty=0.0,
         presence_penalty=0.0,
-        request_timeout=120
+        request_timeout=120,
     )
 
     meeting_info = await load_meeting_info(meeting_info_file)
@@ -200,10 +207,7 @@ async def generate_final_report(key_points, api_key, meeting_type, prompt_file, 
 
     loop = asyncio.get_running_loop()
     with ThreadPoolExecutor(max_workers=1) as executor:
-        final_report = await loop.run_in_executor(
-            executor,
-            partial(llm.invoke, formatted_prompt)
-        )
+        final_report = await loop.run_in_executor(executor, partial(llm.invoke, formatted_prompt))
     final_report = final_report.content
 
     total_time = time.time() - start_time
@@ -232,7 +236,7 @@ async def main():
 
     meeting_type_file = os.path.join(session_dir, "meeting_type.txt")
     try:
-        with open(meeting_type_file, encoding='utf-8') as f:
+        with open(meeting_type_file, encoding="utf-8") as f:
             meeting_type = f.read().strip().lower()
     except FileNotFoundError:
         print(f"错误: 未找到会议类型文件 '{meeting_type_file}'，默认使用 progress")

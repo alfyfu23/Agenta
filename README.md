@@ -18,8 +18,8 @@ pip install flask flask-cors python-dotenv funasr langchain-openai langchain ope
 npm install
 
 # 4. 启动
-python main.py          # 后端 :5000
-npm run dev             # 前端 :3000
+python backend/main.py    # 后端 :5000
+npm run dev               # 前端 :3000
 ```
 
 需要 Python 3.8+、Node.js 16+、CUDA GPU、DeepSeek API Key。
@@ -50,24 +50,28 @@ Vue 3 / Vite / Tailwind CSS / TipTap / Flask / FunASR (SenseVoiceSmall + VAD) / 
 ## 项目结构
 
 ```
-├── main.py                    # Flask 后端：API 路由、会话管理、AI 代理
-├── combined_transcription.py  # 语音转写 + 并发 AI 校对
-├── summary.py                 # 并发要点提取 + 模板填充纪要生成
-├── SenseVoiceSmall.py         # SenseVoice 独立调用脚本
-├── custom.md                  # 自定义模板的 LLM 生成指令
-├── prompt_tra.txt             # 转写校对 Prompt
-├── ex_prompt_*.txt            # 各类型要点提取 Prompt
-├── template_*.md              # 各类型纪要 Markdown 模板
+├── backend/
+│   ├── main.py                    # Flask 后端：API 路由、会话管理、AI 代理
+│   ├── combined_transcription.py  # 语音转写 + 并发 AI 校对
+│   ├── summary.py                 # 并发要点提取 + 模板填充纪要生成
+│   ├── prompts/                   # LLM Prompt 文件
+│   │   ├── prompt_tra.txt         # 转写校对 Prompt
+│   │   ├── ex_prompt_*.txt        # 各类型要点提取 Prompt
+│   │   └── custom.md              # 自定义模板的 LLM 生成指令
+│   └── templates/                 # 纪要 Markdown 模板
+│       ├── template_project.md
+│       ├── template_problem.md
+│       └── template_study.md
 ├── src/
-│   ├── App.vue                # 根组件（侧边栏 + 步骤导航）
-│   ├── main.js                # 路由 + Axios 全局配置
+│   ├── App.vue                    # 根组件（侧边栏 + 步骤导航）
+│   ├── main.js                    # 路由 + Axios 全局配置
 │   └── views/
-│       ├── UploadPage.vue     # 音频上传（拖拽 + 进度条）
+│       ├── UploadPage.vue         # 音频上传（拖拽 + 进度条）
 │       ├── TranscriptionPage.vue  # 转写轮询 + 结果展示
-│       ├── TemplatesPage.vue  # 会议信息表单 + 模板选择
-│       └── ResultPage.vue     # TipTap 编辑器 + AI 辅助编辑
-├── model/                     # 语音模型（gitignore）
-└── .env                       # 环境变量（gitignore）
+│       ├── TemplatesPage.vue      # 会议信息表单 + 模板选择
+│       └── ResultPage.vue         # TipTap 编辑器 + AI 辅助编辑
+├── model/                         # 语音模型（gitignore）
+└── .env                           # 环境变量（gitignore）
 ```
 
 ## License

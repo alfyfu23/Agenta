@@ -209,6 +209,7 @@ export default {
         const customFileInput = ref(null)
         const dropdownRef = ref(null)
         const isSubmitting = ref(false)
+        const errorMessage = ref('')
 
         const fileInfo = ref({
             show: false,
@@ -316,8 +317,6 @@ export default {
             const sidQuery = sid.value ? `?sid=${sid.value}` : ''
             router.push(`/transcribe${sidQuery}`)
         }
-
-        const errorMessage = ref('')
 
         const goNext = async () => {
             if (isSubmitting.value) return

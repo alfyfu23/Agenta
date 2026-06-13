@@ -25,3 +25,6 @@ ignore = [
 
 [tool.ruff.lint.isort]
 known-first-party = ["main", "combined_transcription", "summary"]
+
+[tool.ruff.format]
+quote-style = "double"

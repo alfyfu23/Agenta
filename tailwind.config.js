@@ -7,12 +7,12 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: '#9CC932', // 绿色作为主色调
-        secondary: '#f1f5f9', // 浅灰作为次要背景色
-        neutral: '#64748b', // 中性灰用于文本
-        placeholder: '#94a3b8', // 专门用于占位符的颜色
-        light: '#f8fafc', // 浅色背景
-        border: '#e2e8f0', // 边框颜色
+        primary: '#6da34d',
+        secondary: '#f1f5f9',
+        neutral: '#64748b',
+        placeholder: '#94a3b8',
+        light: '#f8fafc',
+        border: '#e2e8f0',
         speaker1: '#9CC932', // 张小明-绿色
         speaker2: '#3B82F6', // 李华-蓝色
         speaker3: '#F97316', // 王芳-橙色

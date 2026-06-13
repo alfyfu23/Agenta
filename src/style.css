@@ -59,85 +59,6 @@
   .dropdown-shadow {
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
   }
-
-  .speaker-dot {
-    @apply w-3 h-3 rounded-full inline-block mr-2 mt-1.5;
-  }
-
-  .user-message {
-    @apply bg-primary/10 text-slate-800 rounded-lg rounded-tl-none p-4 max-w-[85%] self-end;
-  }
-
-  .ai-message {
-    @apply bg-white border border-border rounded-lg rounded-tr-none p-4 max-w-[85%] self-start;
-  }
-
-  .markdown-content h1 {
-    @apply text-3xl font-bold mb-4 mt-8;
-  }
-
-  .markdown-content h2 {
-    @apply text-2xl font-bold mb-3 mt-7 pb-2 border-b border-border;
-  }
-
-  .markdown-content h3 {
-    @apply text-xl font-bold mb-2 mt-6;
-  }
-
-  .markdown-content p {
-    @apply mb-4 leading-relaxed;
-  }
-
-  .markdown-content ul,
-  .markdown-content ol {
-    @apply mb-4 pl-6;
-  }
-
-  .markdown-content ul {
-    list-style-type: disc;
-  }
-
-  .markdown-content ol {
-    list-style-type: decimal;
-  }
-
-  .markdown-content li {
-    @apply mb-2 leading-relaxed;
-  }
-
-  .markdown-content li ul,
-  .markdown-content li ol {
-    @apply mt-2 mb-0;
-  }
-
-  .markdown-content strong {
-    @apply font-bold;
-  }
-
-  .markdown-content em {
-    @apply italic;
-  }
-
-  .markdown-content code {
-    @apply bg-secondary px-1 py-0.5 rounded font-mono;
-  }
-
-  .markdown-content pre {
-    @apply bg-secondary p-4 rounded-lg mb-4 overflow-x-auto;
-  }
-
-  .editor-header {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    /* 可以添加其他样式，如 padding、margin 等 */
-}
-
-.note-actions {
-    /* 如果需要按钮之间也有间距 */
-    display: flex;
-    gap: 8px;
-}
 }
 
 /* 动画 */
@@ -146,6 +67,7 @@
     opacity: 0;
     transform: translateY(10px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -167,4 +89,4 @@
 
 ::-ms-input-placeholder {
   @apply text-placeholder;
-} 
+}

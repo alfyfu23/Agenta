@@ -10,7 +10,6 @@
         >
           <div
             class="editor-label transcribe-label"
-            style="cursor:pointer;user-select:none;"
             @click="onTranscribeLabelClick"
           >
             <span :class="['triangle', transcribeCollapsed ? '' : 'expanded']">&#9654;</span>
@@ -41,14 +40,10 @@
               会议纪要
             </div>
             <!-- 按钮组 -->
-            <div
-              class="note-actions"
-              style="display: flex; gap: 8px;"
-            >
+            <div class="note-actions">
               <button
                 class="preview-toggle-btn"
                 :disabled="isLoadingSummary"
-                style="padding: 4px 10px; font-size: 14px; background-color: #95C11F; color: white; border: none; border-radius: 4px; cursor: pointer;"
                 @click="showMarkdownPreview = !showMarkdownPreview"
               >
                 <i
@@ -169,7 +164,6 @@
             <div class="chat-row single">
               <div class="chat-user-side">
                 <div class="chat-bubble user">
-                  <div class="chat-user" />
                   <div>{{ item.user }}</div>
                 </div>
               </div>
@@ -177,7 +171,6 @@
             <div class="chat-row single">
               <div class="chat-ai-side">
                 <div class="chat-bubble ai">
-                  <div class="chat-ai" />
                   <div>{{ item.ai }}</div>
                 </div>
                 <div class="chat-actions left">
@@ -240,8 +233,7 @@
         </template>
         <div
           v-if="state.isLoading"
-          class="hint purple-spinner"
-          style="text-align:center;margin:8px 0;"
+          class="hint loading-spinner"
         >
           <span class="spinner" /> AI 正在生成中……
         </div>
@@ -280,329 +272,304 @@ import StarterKit from '@tiptap/starter-kit'
 import { Editor, EditorContent } from '@tiptap/vue-3'
 import { Plugin } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
-import { defineComponent } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, getCurrentInstance } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
 marked.setOptions({
-    breaks: true,
-    gfm: true,
+  breaks: true,
+  gfm: true,
 })
 
-export default defineComponent({
-    components: {
-        EditorContent,
-    },
+export default {
+  name: 'ResultPage',
+  components: { EditorContent },
+  setup() {
+    const route = getCurrentInstance().proxy.$route
+    const router = getCurrentInstance().proxy.$router
 
-    data() {
-        return {
-            state: {
-                isLoading: false,
-                errorMessage: null,
-            },
-            editor: null,
-            transcribeEditor: null,
-            sid: '',
-            highlightRange: null,
-            customPrompt: '',
-            chatHistory: [],
-            transcribeCollapsed: true,
-            showMarkdownPreview: true,
-            isLoadingSummary: true,
-            summaryCheckInterval: null,
-            isUnmounted: false,
-            contentVersion: 0,
+    const state = ref({ isLoading: false, errorMessage: null })
+    const editor = ref(null)
+    const transcribeEditor = ref(null)
+    const sid = ref('')
+    const highlightRange = ref(null)
+    const customPrompt = ref('')
+    const chatHistory = ref([])
+    const transcribeCollapsed = ref(true)
+    const showMarkdownPreview = ref(true)
+    const isLoadingSummary = ref(true)
+    let summaryCheckInterval = null
+    let isUnmounted = false
+    const contentVersion = ref(0)
+
+    const isDisabled = computed(() => {
+      if (!editor.value) return true
+      return editor.value.isEmpty
+    })
+
+    const selectedTextForPrompt = computed(() => {
+      if (!editor.value || !highlightRange.value) return ''
+      return editor.value.state.doc.textBetween(
+        highlightRange.value.from,
+        highlightRange.value.to
+      )
+    })
+
+    const markdownHtml = computed(() => {
+      contentVersion.value
+      if (!editor.value) return ''
+      const rawContent = editor.value.getText()
+      let markdownText = rawContent
+        .replace(/\r\n/g, '\n')
+        .replace(/\r/g, '\n')
+        .replace(/\n{2,}/g, '\n\n')
+        .replace(/([^\n])\n([^\n])/g, '$1\n\n$2')
+        .replace(/```([\s\S]*?)```/g, (match, code) => '```\n' + code.trim() + '\n```')
+        .replace(/(#{1,6} .+?)(?=\n|$)/g, '$1\n')
+        .replace(/^(\s*)-\s/gm, '$1- ')
+        .replace(/^(\s*)\*\s/gm, '$1* ')
+        .replace(/^(\s*)\d+\.\s/gm, '$11. ')
+        .trim()
+      return DOMPurify.sanitize(marked.parse(markdownText))
+    })
+
+    watch(chatHistory, () => {
+      nextTick(() => {
+        const el = getCurrentInstance().proxy.$el
+        const chatScroll = el?.querySelector('.ai-chat-history-scroll')
+        if (chatScroll) chatScroll.scrollTop = chatScroll.scrollHeight
+      })
+    })
+
+    async function fetchSummaryMd() {
+      try {
+        const sidQuery = sid.value ? `?sid=${sid.value}` : ''
+        const response = await fetch(`/api/summary.md${sidQuery}`, { credentials: 'include' })
+        if (!response.ok) {
+          if (response.status === 404) throw new Error('文件不存在')
+          throw new Error('获取summary.md失败')
         }
-    },
+        const rawText = await response.text()
+        editor.value?.commands.setContent(rawText, false, { preserveWhitespace: true })
+        contentVersion.value++
+        isLoadingSummary.value = false
+        return true
+      } catch (error) {
+        return false
+      }
+    }
 
-    computed: {
-        isDisabled() {
-            if (!this.editor) return true
-            return this.editor.isEmpty
-        },
-        selectedTextForPrompt() {
-            if (!this.editor || !this.highlightRange) return ''
-            return this.editor.state.doc.textBetween(
-                this.highlightRange.from,
-                this.highlightRange.to
-            )
-        },
-        markdownHtml() {
-            this.contentVersion
-            if (!this.editor) return ''
-            const rawContent = this.editor.getText()
+    function startSummaryCheck() {
+      fetchSummaryMd().then(success => {
+        if (isUnmounted) return
+        if (success) return
+        summaryCheckInterval = setInterval(async () => {
+          if (isUnmounted) {
+            clearInterval(summaryCheckInterval)
+            return
+          }
+          const ok = await fetchSummaryMd()
+          if (ok && summaryCheckInterval) {
+            clearInterval(summaryCheckInterval)
+            summaryCheckInterval = null
+          }
+        }, 5000)
+      })
+    }
 
-            // 增强版Markdown转换逻辑，重点处理换行
-            let markdownText = rawContent
-                // 先将所有换行符统一处理
-                .replace(/\r\n/g, '\n') // 处理Windows换行
-                .replace(/\r/g, '\n')   // 处理Mac老式换行
-                // 处理连续空行作为段落分隔
-                .replace(/\n{2,}/g, '\n\n')
-                // 处理单行换行（转换为<br>）
-                .replace(/([^\n])\n([^\n])/g, '$1\n\n$2')
-                // 处理代码块
-                .replace(/```([\s\S]*?)```/g, (match, code) => {
-                    return '```\n' + code.trim() + '\n```'
-                })
-                // 处理标题
-                .replace(/(#{1,6} .+?)(?=\n|$)/g, '$1\n')
-                // 处理列表
-                .replace(/^(\s*)-\s/gm, '$1- ')
-                .replace(/^(\s*)\*\s/gm, '$1* ')
-                .replace(/^(\s*)\d+\.\s/gm, '$11. ')
-                .trim()
-
-            return DOMPurify.sanitize(marked.parse(markdownText))
+    async function fetchCombinedOutput() {
+      try {
+        const sidQuery = sid.value ? `?sid=${sid.value}` : ''
+        const response = await fetch(`/api/combined_output.txt${sidQuery}`, { credentials: 'include' })
+        if (!response.ok) {
+          if (response.status === 404) throw new Error('文件不存在')
+          throw new Error('获取转写失败')
         }
-    },
+        const rawText = await response.text()
+        transcribeEditor.value?.commands.setContent(rawText, false, { preserveWhitespace: true })
+        return true
+      } catch (error) {
+        return false
+      }
+    }
 
-    watch: {
-        chatHistory() {
-            this.$nextTick(() => {
-                const chatScroll = this.$el.querySelector('.ai-chat-history-scroll')
-                if (chatScroll) chatScroll.scrollTop = chatScroll.scrollHeight
-            })
-        }
-    },
+    function onTranscribeLabelClick() {
+      transcribeCollapsed.value = !transcribeCollapsed.value
+      if (!transcribeCollapsed.value) {
+        fetchCombinedOutput()
+      }
+    }
 
-    mounted() {
-        this.sid = this.$route.query.sid || ''
-        this.startSummaryCheck()
-        this.editor = new Editor({
-            extensions: [
-                StarterKit,
-                new Plugin({
-                    props: {
-                        decorations: (state) => {
-                            if (!this.highlightRange) return null
-                            const { from, to } = this.highlightRange
-                            return DecorationSet.create(state.doc, [
-                                Decoration.inline(from, to, { class: 'ai-highlight' })
-                            ])
-                        }
-                    }
-                })
-            ],
-            content: '',
-            parseOptions: {
-                preserveWhitespace: true,
-            },
-            onUpdate: () => {
-                this.contentVersion++
-            },
-            onSelectionUpdate: ({ editor }) => {
-                const { from, to } = editor.state.selection
-                this.highlightRange = from !== to ? { from, to } : null
-            }
+    async function runAiCommand(command) {
+      if (!editor.value) return
+      const { from, to } = editor.value.state.selection
+      let selectedText = editor.value.state.doc.textBetween(from, to)
+      let highlightFrom = from, highlightTo = to
+      if (from === to) {
+        selectedText = editor.value.getText().trim()
+        highlightFrom = 0
+        highlightTo = editor.value.state.doc.content.size
+      }
+      highlightRange.value = (from !== to || selectedText) ? { from: highlightFrom, to: highlightTo } : null
+
+      const commandMap = {
+        keypoints: '提取要点', rephrase: '改写', summarize: '总结', simplify: '简化',
+        fixSpelling: '纠正拼写', translateChinese: '翻译为中文', translateEnglish: '翻译为英语'
+      }
+      const userQuestion = `请帮我${commandMap[command]}${from !== to ? '（针对选中内容）' : '（针对全文）'}`
+      let prompt = ''
+      switch (command) {
+        case 'rephrase': prompt = `用不同的表达方式重写以下文本：\n\n${selectedText}`; break
+        case 'summarize': prompt = `总结以下文本的主要内容：\n\n${selectedText}`; break
+        case 'simplify': prompt = `简化以下文本，使其更容易理解：\n\n${selectedText}`; break
+        case 'fixSpelling': prompt = `修正以下文本中的拼写和语法错误：\n\n${selectedText}`; break
+        case 'translateChinese': prompt = `将以下文本翻译成中文：\n\n${selectedText}`; break
+        case 'translateEnglish': prompt = `将以下文本翻译成英语：\n\n${selectedText}`; break
+      }
+      try {
+        state.value.isLoading = true
+        state.value.errorMessage = null
+        const response = await fetch('/api/ai_proxy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command, prompt }),
+          credentials: 'include',
         })
-        this.transcribeEditor = new Editor({
-            extensions: [StarterKit],
-            content: '',
-        })
-        this.$nextTick(() => {
-            const chatScroll = this.$el.querySelector('.ai-chat-history-scroll')
-            if (chatScroll) chatScroll.scrollTop = chatScroll.scrollHeight
-        })
-    },
-
-    beforeUnmount() {
-        this.isUnmounted = true
-        if (this.summaryCheckInterval) {
-            clearInterval(this.summaryCheckInterval)
+        const data = await response.json()
+        if (!response.ok || data.error) {
+          state.value.errorMessage = data.error || 'AI接口返回异常'
+          return
         }
-        this.editor?.destroy()
-        this.transcribeEditor?.destroy()
-    },
+        chatHistory.value.push({ user: userQuestion, ai: data.response })
+      } catch (error) {
+        state.value.errorMessage = `AI处理失败: ${error.message}`
+      } finally {
+        state.value.isLoading = false
+      }
+    }
 
-    methods: {
-        async fetchSummaryMd() {
-            try {
-                const sidQuery = this.sid ? `?sid=${this.sid}` : ''
-                const response = await fetch(`/api/summary.md${sidQuery}`, { credentials: 'include' })
-                if (!response.ok) {
-                    // 如果文件不存在，抛出错误让catch处理
-                    if (response.status === 404) throw new Error('文件不存在')
-                    throw new Error('获取summary.md失败')
-                }
-                let rawText = await response.text()
-                this.editor?.commands.setContent(rawText, false, { preserveWhitespace: true })
-                this.contentVersion++
-                this.isLoadingSummary = false
-                return true
-            } catch (error) {
-                console.log('当前未获取到summary.md，将继续尝试:', error.message)
-                return false // 表示获取失败
-            }
-        },
+    async function sendCustomPrompt() {
+      if (!customPrompt.value.trim()) return
+      state.value.isLoading = true
+      state.value.errorMessage = null
+      const { from, to } = editor.value.state.selection
+      let selectedText = editor.value.state.doc.textBetween(from, to)
+      let highlightFrom = from, highlightTo = to
+      if (from === to) {
+        selectedText = editor.value.getText().trim()
+      }
+      highlightRange.value = (from !== to || selectedText) ? { from: highlightFrom, to: highlightTo } : null
+      const prompt = selectedText
+        ? `针对以下文本片段，${customPrompt.value}\n\n${selectedText}`
+        : customPrompt.value
 
-        // 新增：定时检查summary.md的方法
-        startSummaryCheck() {
-            this.fetchSummaryMd().then(success => {
-                if (this.isUnmounted) return
-                if (success) {
-                    return
-                }
-                this.summaryCheckInterval = setInterval(async () => {
-                    if (this.isUnmounted) {
-                        clearInterval(this.summaryCheckInterval)
-                        return
-                    }
-                    const success = await this.fetchSummaryMd()
-                    if (success && this.summaryCheckInterval) {
-                        clearInterval(this.summaryCheckInterval)
-                        this.summaryCheckInterval = null
-                    }
-                }, 5000)
-            })
-        },
-
-        async fetchCombinedOutput() {
-            try {
-                const sidQuery = this.sid ? `?sid=${this.sid}` : ''
-                const response = await fetch(`/api/combined_output.txt${sidQuery}`, { credentials: 'include' })
-                if (!response.ok) {
-                    if (response.status === 404) throw new Error('文件不存在')
-                    throw new Error('获取转写失败')
-                }
-                let rawText = await response.text()
-                this.transcribeEditor?.commands.setContent(rawText, false, { preserveWhitespace: true })
-                return true
-            } catch (error) {
-                console.log('当前未获取到转写，将继续尝试:', error.message)
-                return false
-            }
-        },
-        onTranscribeLabelClick() {
-            this.transcribeCollapsed = !this.transcribeCollapsed
-            if (!this.transcribeCollapsed) {
-                this.fetchCombinedOutput()
-            }
-        },
-
-        async runAiCommand(command) {
-            if (!this.editor) return
-            const { from, to } = this.editor.state.selection
-            let selectedText = this.editor.state.doc.textBetween(from, to)
-            let highlightFrom = from, highlightTo = to
-            if (from === to) {
-                selectedText = this.editor.getText().trim()
-                highlightFrom = 0
-                highlightTo = this.editor.state.doc.content.size
-            }
-            this.highlightRange = (from !== to || selectedText) ? { from: highlightFrom, to: highlightTo } : null
-
-            const commandMap = {
-                keypoints: '提取要点', rephrase: '改写', summarize: '总结', simplify: '简化',
-                fixSpelling: '纠正拼写', continueWriting: '续写', emojify: '添加表情',
-                deEmojify: '移除表情', translateChinese: '翻译为中文', translateEnglish: '翻译为英语'
-            }
-            const userQuestion = `请帮我${commandMap[command]}${from !== to ? '（针对选中内容）' : '（针对全文）'}`
-            let prompt = ''
-            switch (command) {
-                case 'rephrase': prompt = `用不同的表达方式重写以下文本：\n\n${selectedText}`; break
-                case 'summarize': prompt = `总结以下文本的主要内容：\n\n${selectedText}`; break
-                case 'simplify': prompt = `简化以下文本，使其更容易理解：\n\n${selectedText}`; break
-                case 'fixSpelling': prompt = `修正以下文本中的拼写和语法错误：\n\n${selectedText}`; break
-                case 'translateChinese': prompt = `将以下文本翻译成中文：\n\n${selectedText}`; break
-                case 'translateEnglish': prompt = `将以下文本翻译成英语：\n\n${selectedText}`; break
-            }
-            try {
-                this.state.isLoading = true
-                this.state.errorMessage = null
-                const response = await fetch('/api/ai_proxy', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ command, prompt }),
-                    credentials: 'include',
-                })
-                const data = await response.json()
-                if (!response.ok || data.error) {
-                    this.state.errorMessage = data.error || 'AI接口返回异常'
-                    this.state.isLoading = false
-                    return
-                }
-                const aiResponse = data.response
-                this.chatHistory.push({ user: userQuestion, ai: aiResponse })
-            } catch (error) {
-                this.state.errorMessage = `AI处理失败: ${error.message}`
-            } finally {
-                this.state.isLoading = false
-            }
-        },
-
-        async sendCustomPrompt() {
-            if (!this.customPrompt.trim()) return
-            this.state.isLoading = true
-            this.state.errorMessage = null
-            const { from, to } = this.editor.state.selection
-            let selectedText = this.editor.state.doc.textBetween(from, to)
-            let highlightFrom = from, highlightTo = to
-            if (from === to) {
-                selectedText = this.editor.getText().trim()
-            }
-            this.highlightRange = (from !== to || selectedText) ? { from: highlightFrom, to: highlightTo } : null
-            let prompt = selectedText
-                ? `针对以下文本片段，${this.customPrompt}\n\n${selectedText}`
-                : this.customPrompt
-
-            try {
-                const response = await fetch('/api/ai_proxy', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ command: 'custom', prompt }),
-                    credentials: 'include',
-                })
-                const data = await response.json()
-                if (!response.ok || data.error) {
-                    this.state.errorMessage = data.error || 'AI接口返回异常'
-                    this.state.isLoading = false
-                    return
-                }
-                const aiResponse = data.response
-                this.chatHistory.push({
-                    user: this.customPrompt + (selectedText ? `（针对选中内容）` : ''),
-                    ai: aiResponse,
-                })
-                this.customPrompt = ''
-            } catch (error) {
-                this.state.errorMessage = `AI处理失败: ${error.message}`
-            } finally {
-                this.state.isLoading = false
-            }
-        },
-
-        replaceSelectionFromHistory(idx) {
-            const historyItem = this.chatHistory[idx]
-            if (!this.editor || !this.highlightRange || !historyItem.ai) return
-            const { from, to } = this.highlightRange
-            this.editor.chain().focus().deleteRange({ from, to }).insertContent(historyItem.ai).run()
-            this.highlightRange = null
-        },
-
-        saveMeetingNote() {
-            const note = this.editor?.getText() || ''
-            const now = new Date()
-            const pad = n => String(n).padStart(2, '0')
-            const filename = `会议纪要_${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.md`
-            const blob = new Blob([note], { type: 'text/markdown;charset=utf-8' })
-            const link = document.createElement('a')
-            link.href = URL.createObjectURL(blob)
-            link.download = filename
-            document.body.appendChild(link)
-            link.click()
-            document.body.removeChild(link)
-            URL.revokeObjectURL(link.href)
-        },
-
-        goBack() {
-            if (confirm('确定要返回吗？未保存的更改将会丢失。')) {
-                const sidQuery = this.sid ? `?sid=${this.sid}` : ''
-                this.$router.push(`/templates${sidQuery}`)
-            }
+      try {
+        const response = await fetch('/api/ai_proxy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command: 'custom', prompt }),
+          credentials: 'include',
+        })
+        const data = await response.json()
+        if (!response.ok || data.error) {
+          state.value.errorMessage = data.error || 'AI接口返回异常'
+          return
         }
-    },
-})
+        chatHistory.value.push({
+          user: customPrompt.value + (selectedText ? '（针对选中内容）' : ''),
+          ai: data.response,
+        })
+        customPrompt.value = ''
+      } catch (error) {
+        state.value.errorMessage = `AI处理失败: ${error.message}`
+      } finally {
+        state.value.isLoading = false
+      }
+    }
+
+    function replaceSelectionFromHistory(idx) {
+      const historyItem = chatHistory.value[idx]
+      if (!editor.value || !highlightRange.value || !historyItem.ai) return
+      const { from, to } = highlightRange.value
+      editor.value.chain().focus().deleteRange({ from, to }).insertContent(historyItem.ai).run()
+      highlightRange.value = null
+    }
+
+    function saveMeetingNote() {
+      const note = editor.value?.getText() || ''
+      const now = new Date()
+      const pad = n => String(n).padStart(2, '0')
+      const filename = `会议纪要_${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.md`
+      const blob = new Blob([note], { type: 'text/markdown;charset=utf-8' })
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(blob)
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(link.href)
+    }
+
+    function goBack() {
+      if (confirm('确定要返回吗？未保存的更改将会丢失。')) {
+        const sidQuery = sid.value ? `?sid=${sid.value}` : ''
+        router.push(`/templates${sidQuery}`)
+      }
+    }
+
+    onMounted(() => {
+      sid.value = route.query.sid || ''
+      startSummaryCheck()
+      editor.value = new Editor({
+        extensions: [
+          StarterKit,
+          new Plugin({
+            props: {
+              decorations: (state) => {
+                if (!highlightRange.value) return null
+                const { from, to } = highlightRange.value
+                return DecorationSet.create(state.doc, [
+                  Decoration.inline(from, to, { class: 'ai-highlight' })
+                ])
+              }
+            }
+          })
+        ],
+        content: '',
+        parseOptions: { preserveWhitespace: true },
+        onUpdate: () => { contentVersion.value++ },
+        onSelectionUpdate: ({ editor: ed }) => {
+          const { from, to } = ed.state.selection
+          highlightRange.value = from !== to ? { from, to } : null
+        }
+      })
+      transcribeEditor.value = new Editor({
+        extensions: [StarterKit],
+        content: '',
+      })
+      nextTick(() => {
+        const el = getCurrentInstance().proxy.$el
+        const chatScroll = el?.querySelector('.ai-chat-history-scroll')
+        if (chatScroll) chatScroll.scrollTop = chatScroll.scrollHeight
+      })
+    })
+
+    onBeforeUnmount(() => {
+      isUnmounted = true
+      if (summaryCheckInterval) clearInterval(summaryCheckInterval)
+      editor.value?.destroy()
+      transcribeEditor.value?.destroy()
+    })
+
+    return {
+      state, editor, transcribeEditor, sid, highlightRange, customPrompt,
+      chatHistory, transcribeCollapsed, showMarkdownPreview, isLoadingSummary,
+      contentVersion, isDisabled, selectedTextForPrompt, markdownHtml,
+      onTranscribeLabelClick, runAiCommand, sendCustomPrompt,
+      replaceSelectionFromHistory, saveMeetingNote, goBack,
+    }
+  }
+}
 </script>
 
 <style lang="scss">
@@ -699,6 +666,11 @@ $transition: all 0.25s ease; // 统一过渡动画
     align-items: center;
 }
 
+.transcribe-label {
+    cursor: pointer;
+    user-select: none;
+}
+
 .editor-content-fixed {
     flex: 1 1 0;
     min-height: 0;
@@ -780,6 +752,27 @@ $transition: all 0.25s ease; // 统一过渡动画
     }
 }
 
+// 预览切换按钮
+.preview-toggle-btn {
+    padding: 4px 10px;
+    font-size: 14px;
+    background-color: $primary;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: $transition;
+
+    &:hover {
+        background: $primary-dark;
+    }
+
+    &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+}
+
 // 纪要操作按钮
 .note-actions {
     display: flex;
@@ -845,7 +838,7 @@ $transition: all 0.25s ease; // 统一过渡动画
         margin-top: 6px;
     }
 
-    &.purple-spinner {
+    &.loading-spinner {
         font-weight: 500;
         padding: 8px 0;
         display: flex;
@@ -869,20 +862,6 @@ $transition: all 0.25s ease; // 统一过渡动画
     to {
         transform: rotate(360deg);
     }
-}
-
-.editor-placeholder {
-    color: #999;
-    padding: 16px;
-    text-align: center;
-    position: absolute;
-    width: 100%;
-    pointer-events: none;
-    z-index: 1;
-    font-size: 14px;
-    background: $gray-light;
-    border-radius: $radius-sm;
-    box-sizing: border-box;
 }
 
 // 右侧AI结果面板
@@ -1062,11 +1041,10 @@ $transition: all 0.25s ease; // 统一过渡动画
     font-size: 14px;
     color: $text-secondary;
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: 6px;
     flex-wrap: wrap;
     word-break: break-all;
-    align-items: center;
 
     .chat-bubble.user {
         display: inline-block;
@@ -1363,34 +1341,6 @@ $transition: all 0.25s ease; // 统一过渡动画
     background: rgba(141, 192, 117, 0.2) !important;
     border-radius: 2px;
     padding: 0 2px;
-}
-
-.summary-loading {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: rgba(255, 255, 255, 0.9);
-    padding: 12px 20px;
-    border-radius: 6px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    z-index: 100;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: #6da34d;
-    font-weight: 500;
-    font-size: 13px;
-
-    .spinner {
-        display: inline-block;
-        width: 16px;
-        height: 16px;
-        border: 2px solid rgba(109, 163, 77, 0.3);
-        border-radius: 50%;
-        border-top-color: #6da34d;
-        animation: spin 1s ease-in-out infinite;
-    }
 }
 
 .loading-container {
