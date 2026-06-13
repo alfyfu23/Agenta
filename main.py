@@ -3,6 +3,7 @@ import secrets
 import subprocess
 import sys
 import threading
+import time
 import uuid
 
 from flask import Flask, jsonify, request, send_from_directory, session
@@ -20,7 +21,10 @@ CORS(app, supports_credentials=True, origins=["http://localhost:3000"])
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_AUDIO_EXTENSIONS = {'mp3', 'wav', 'm4a', 'flac', 'wma'}
 ALLOWED_TEMPLATE_EXTENSIONS = {'md', 'markdown'}
-ALLOWED_AI_COMMANDS = {'rephrase', 'summarize', 'simplify', 'fixSpelling', 'translateChinese', 'translateEnglish'}
+ALLOWED_AI_COMMANDS = {'rephrase', 'summarize', 'simplify', 'fixSpelling', 'translateChinese', 'translateEnglish', 'custom'}
+SESSION_TIMEOUT = 3600
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 sessions = {}
 sessions_lock = threading.Lock()
@@ -29,6 +33,20 @@ if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
 app.secret_key = os.environ.get('FLASK_SECRET_KEY') or secrets.token_hex(16)
+
+_openai_client = None
+_openai_lock = threading.Lock()
+
+
+def _get_openai_client():
+    global _openai_client
+    if _openai_client is None:
+        with _openai_lock:
+            if _openai_client is None:
+                from openai import OpenAI
+                api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+                _openai_client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com/v1")
+    return _openai_client
 
 
 def _validate_filename(filename):
@@ -40,6 +58,13 @@ def _validate_filename(filename):
     if not full_path.startswith(base_path + os.sep) and full_path != base_path:
         return None
     return safe
+
+
+def _cleanup_expired_sessions():
+    now = time.time()
+    expired = [sid for sid, s in sessions.items() if now - s.get('last_access', now) > SESSION_TIMEOUT]
+    for sid in expired:
+        sessions.pop(sid, None)
 
 
 def _get_session_id():
@@ -58,14 +83,22 @@ def _get_session_id():
         session['sid'] = sid
         session_dir = os.path.join(UPLOAD_FOLDER, sid)
         with sessions_lock:
-            sessions[sid] = {'dir': session_dir}
+            _cleanup_expired_sessions()
+            sessions[sid] = {'dir': session_dir, 'lock': threading.Lock(), 'last_access': time.time()}
         os.makedirs(session_dir, exist_ok=True)
+    else:
+        sessions[sid]['last_access'] = time.time()
     return sid
 
 
 def _get_session_dir():
     sid = _get_session_id()
     return sessions[sid]['dir']
+
+
+def _get_session_lock():
+    sid = _get_session_id()
+    return sessions[sid]['lock']
 
 
 @app.route('/')
@@ -92,8 +125,8 @@ def upload_file():
     if not safe_name:
         return jsonify({'error': '文件名无效'}), 400
 
-    session_dir = _get_session_dir()
     sid = _get_session_id()
+    session_dir = sessions[sid]['dir']
     file.save(os.path.join(session_dir, safe_name))
     return jsonify({'success': True, 'message': '上传成功', 'filename': safe_name, 'session_id': sid})
 
@@ -108,25 +141,40 @@ def transcribe():
     if not safe_name:
         return jsonify({'error': 'Invalid filename'}), 400
 
-    session_dir = _get_session_dir()
+    sid = _get_session_id()
+    session_dir = sessions[sid]['dir']
+    session_lock = sessions[sid]['lock']
+
+    if not session_lock.acquire(blocking=False):
+        return jsonify({'error': '当前会话已有任务在运行，请稍后再试'}), 409
+
     audio_path = os.path.join(session_dir, safe_name)
     if not os.path.exists(audio_path):
+        session_lock.release()
         return jsonify({'error': 'File not found'}), 404
 
-    result_file = os.path.join(session_dir, "combined_output.txt")
-    if os.path.exists(result_file):
-        os.remove(result_file)
+    for fname in ("combined_output.txt", "error_transcription.txt"):
+        fpath = os.path.join(session_dir, fname)
+        if os.path.exists(fpath):
+            os.remove(fpath)
 
     def run_transcription():
         try:
             subprocess.run(
-                [sys.executable, "combined_transcription.py",
+                [sys.executable, os.path.join(SCRIPT_DIR, "combined_transcription.py"),
                  os.path.abspath(audio_path), os.path.abspath(session_dir)],
                 check=True,
+                capture_output=True, text=True,
             )
+        except subprocess.CalledProcessError as e:
+            error_msg = e.stderr or e.stdout or str(e)
+            with open(os.path.join(session_dir, "error_transcription.txt"), "w", encoding="utf-8") as f:
+                f.write(error_msg[:2000])
         except Exception as e:
-            with open(os.path.join(session_dir, "error.txt"), "w", encoding="utf-8") as f:
+            with open(os.path.join(session_dir, "error_transcription.txt"), "w", encoding="utf-8") as f:
                 f.write(str(e))
+        finally:
+            session_lock.release()
 
     threading.Thread(target=run_transcription).start()
 
@@ -136,7 +184,7 @@ def transcribe():
 @app.route('/check_transcription')
 def check_transcription():
     session_dir = _get_session_dir()
-    error_file = os.path.join(session_dir, "error.txt")
+    error_file = os.path.join(session_dir, "error_transcription.txt")
     if os.path.exists(error_file):
         with open(error_file, encoding="utf-8") as f:
             return jsonify({'completed': True, 'error': f.read()})
@@ -156,21 +204,35 @@ def check_transcription():
 
 @app.route('/result', methods=['POST'])
 def result():
-    session_dir = _get_session_dir()
+    sid = _get_session_id()
+    session_dir = sessions[sid]['dir']
+    session_lock = sessions[sid]['lock']
+
+    if not session_lock.acquire(blocking=False):
+        return jsonify({'error': '当前会话已有任务在运行，请稍后再试'}), 409
+
+    for fname in ("summary.md", "error_summary.txt"):
+        fpath = os.path.join(session_dir, fname)
+        if os.path.exists(fpath):
+            os.remove(fpath)
 
     def run_result():
         try:
             subprocess.run(
-                [sys.executable, "summary.py", os.path.abspath(session_dir)],
+                [sys.executable, os.path.join(SCRIPT_DIR, "summary.py"),
+                 os.path.abspath(session_dir)],
                 check=True,
+                capture_output=True, text=True,
             )
+        except subprocess.CalledProcessError as e:
+            error_msg = e.stderr or e.stdout or str(e)
+            with open(os.path.join(session_dir, "error_summary.txt"), "w", encoding="utf-8") as f:
+                f.write(error_msg[:2000])
         except Exception as e:
-            with open(os.path.join(session_dir, "error.txt"), "w", encoding="utf-8") as f:
+            with open(os.path.join(session_dir, "error_summary.txt"), "w", encoding="utf-8") as f:
                 f.write(str(e))
-
-    summary_file = os.path.join(session_dir, "summary.md")
-    if os.path.exists(summary_file):
-        os.remove(summary_file)
+        finally:
+            session_lock.release()
 
     threading.Thread(target=run_result).start()
     return jsonify({'success': True, 'message': 'Summary generation started'})
@@ -179,7 +241,7 @@ def result():
 @app.route('/summary.md')
 def get_summary():
     session_dir = _get_session_dir()
-    error_file = os.path.join(session_dir, "error.txt")
+    error_file = os.path.join(session_dir, "error_summary.txt")
     if os.path.exists(error_file):
         with open(error_file, encoding="utf-8") as f:
             return jsonify({'error': f.read()}), 500
@@ -197,7 +259,7 @@ def save_meeting_name():
     session_dir = _get_session_dir()
     meeting_name = request.form.get('meeting_name', '').strip()
     with open(os.path.join(session_dir, 'title.txt'), 'w', encoding='utf-8') as f:
-        f.write(f"{meeting_name or ''}\n")
+        f.write(f"{meeting_name or '未命名会议'}\n")
     return jsonify({'success': True, 'message': 'Meeting name saved successfully'})
 
 
@@ -226,21 +288,21 @@ def save_meeting_info():
         if not meeting_info:
             return jsonify({'success': False, 'error': '请求体不是有效的JSON'}), 400
 
+        requirements = meeting_info.get('requirements') or '无'
+
         info_str = (
-            f"时间: {meeting_info.get('time', '未设置')}\n"
-            f"参会人: {meeting_info.get('participants', '未设置')}\n"
-            f"记录人: {meeting_info.get('recorder', '未设置')}\n"
-            f"会议类型: {meeting_info.get('type', '未设置')}\n"
-            f"个性化要求: {meeting_info.get('requirements', '无')}"
+            f"时间: {meeting_info.get('time') or '未设置'}\n"
+            f"参会人: {meeting_info.get('participants') or '未设置'}\n"
+            f"记录人: {meeting_info.get('recorder') or '未设置'}\n"
+            f"会议类型: {meeting_info.get('type') or '未设置'}\n"
+            f"个性化要求: {requirements}"
         )
 
         with open(os.path.join(session_dir, 'meeting_info.txt'), 'w', encoding='utf-8') as f:
             f.write(info_str)
 
         with open(os.path.join(session_dir, 'user_prompt.txt'), 'w', encoding='utf-8') as f:
-            f.write(meeting_info.get('requirements', ''))
-
-        session['run_summary'] = True
+            f.write(meeting_info.get('requirements') or '')
 
         return jsonify({'success': True, 'message': '会议信息保存成功'})
     except Exception as e:
@@ -279,9 +341,12 @@ def upload_custom_template():
 @app.route('/ai_proxy', methods=['POST'])
 def ai_proxy():
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         command = data.get('command', '')
         prompt = data.get('prompt', '')
+
+        if command not in ALLOWED_AI_COMMANDS:
+            return jsonify({'error': f'不支持的命令: {command}'}), 400
 
         if not prompt:
             return jsonify({'error': 'prompt is required'}), 400
@@ -290,8 +355,7 @@ def ai_proxy():
         if not api_key:
             return jsonify({'error': 'API key not configured on server'}), 500
 
-        from openai import OpenAI
-        client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com/v1")
+        client = _get_openai_client()
 
         system_prompt = '你是一个智能写作助手，帮助用户处理文本。请保持文本的格式，仅修改内容，除非用户让你修改格式。如果用户不要求翻译，原文使用哪种语言，返回文本使用哪种语言。只需要返回修改后的内容，不要前后有任何说明。'
         if command == 'custom':
@@ -304,7 +368,7 @@ def ai_proxy():
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
-            max_tokens=1000,
+            max_tokens=2000,
         )
 
         ai_response = response.choices[0].message.content

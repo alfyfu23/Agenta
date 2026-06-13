@@ -350,13 +350,17 @@ export default {
                 await axios.post(`/api/save_meeting_name?sid=${sessionId.value || ''}`, formData, { withCredentials: true })
 
                 const filename = encodeURIComponent(uploadedFilename.value || selectedFile.value.name)
-                await axios.get(`/api/transcribe?filename=${filename}${sidParam}`, { withCredentials: true })
+                const transcribeResponse = await axios.get(`/api/transcribe?filename=${filename}${sidParam}`, { withCredentials: true })
+
+                if (transcribeResponse.data.error) {
+                    showStatus('错误', transcribeResponse.data.error, 'error')
+                    return
+                }
+
                 router.push(`/transcribe?filename=${filename}${sidParam}`)
             } catch (error) {
-                console.error('转写接口调用失败:', error)
-                const filename = encodeURIComponent(uploadedFilename.value || selectedFile.value.name)
-                const sidParam = sessionId.value ? `&sid=${sessionId.value}` : ''
-                router.push(`/transcribe?filename=${filename}${sidParam}`)
+                const errMsg = error.response?.data?.error || '启动转写失败，请重试'
+                showStatus('错误', errMsg, 'error')
             }
         }
 

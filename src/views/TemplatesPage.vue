@@ -59,7 +59,10 @@
       <!-- 会议类型模块 -->
       <div>
         <label class="block text-neutral mb-2">会议类型</label>
-        <div class="relative">
+        <div
+          ref="dropdownRef"
+          class="relative"
+        >
           <!-- 自定义下拉选择框 -->
           <div
             class="form-input-style cursor-pointer"
@@ -184,7 +187,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import axios from 'axios'
 
@@ -204,6 +207,8 @@ export default {
         const isDropdownOpen = ref(false)
         const isDragOver = ref(false)
         const customFileInput = ref(null)
+        const dropdownRef = ref(null)
+        const isSubmitting = ref(false)
 
         const fileInfo = ref({
             show: false,
@@ -314,6 +319,8 @@ export default {
         const errorMessage = ref('')
 
         const goNext = async () => {
+            if (isSubmitting.value) return
+            isSubmitting.value = true
             errorMessage.value = ''
             try {
                 const sidParam = sid.value ? `?sid=${sid.value}` : ''
@@ -338,12 +345,14 @@ export default {
             } catch (error) {
                 console.error('请求失败:', error)
                 errorMessage.value = '保存失败，请检查网络后重试'
+            } finally {
+                isSubmitting.value = false
             }
         }
 
         // 点击页面其他地方关闭下拉列表
         const handleClickOutside = (event) => {
-            if (isDropdownOpen.value && !event.target.closest('.relative')) {
+            if (isDropdownOpen.value && dropdownRef.value && !dropdownRef.value.contains(event.target)) {
                 isDropdownOpen.value = false
             }
         }
@@ -353,8 +362,11 @@ export default {
             const pad = n => String(n).padStart(2, '0')
             meetingTime.value = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`
 
-            // 添加点击外部关闭下拉列表的监听
             document.addEventListener('click', handleClickOutside)
+        })
+
+        onUnmounted(() => {
+            document.removeEventListener('click', handleClickOutside)
         })
 
         return {
@@ -366,6 +378,7 @@ export default {
             isDropdownOpen,
             isDragOver,
             customFileInput,
+            dropdownRef,
             fileInfo,
             errorMessage,
             meetingTypeOptions,

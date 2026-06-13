@@ -35,20 +35,33 @@ MEETING_TYPE_CONFIG = {
 }
 
 
+def _escape_braces(text):
+    return text.replace('{', '{{').replace('}', '}}')
+
+
+def _restore_placeholders(text, vars_list):
+    for var in vars_list:
+        text = text.replace('{{' + var + '}}', '{' + var + '}')
+    return text
+
+
 async def extract_key_point(executor, loop, llm, extraction_prompt, result, index, total):
     start_time = time.time()
-    print(f"正在提炼第 {index+1}/{total} 个结果的要点...")
+    print(f"正在提炼第 {index + 1}/{total} 个结果的要点...")
 
     input_text = extraction_prompt + "\n\n" + result
 
-    response = await loop.run_in_executor(
-        executor,
-        partial(llm.invoke, input_text)
-    )
-
-    elapsed_time = time.time() - start_time
-    print(f"第 {index+1} 个结果要点提炼完成，耗时: {elapsed_time:.2f} 秒")
-    return response.content
+    try:
+        response = await loop.run_in_executor(
+            executor,
+            partial(llm.invoke, input_text)
+        )
+        elapsed_time = time.time() - start_time
+        print(f"第 {index + 1} 个结果要点提炼完成，耗时: {elapsed_time:.2f} 秒")
+        return response.content
+    except Exception as e:
+        print(f"第 {index + 1} 个结果要点提炼失败: {e}")
+        return f"[该片段处理失败: {e}]"
 
 
 async def extract_key_points(results, extraction_prompt_file, api_key):
@@ -67,7 +80,7 @@ async def extract_key_points(results, extraction_prompt_file, api_key):
     start_time = time.time()
 
     loop = asyncio.get_running_loop()
-    with ThreadPoolExecutor() as executor:
+    with ThreadPoolExecutor(max_workers=5) as executor:
         tasks = []
         for i, result in enumerate(results):
             tasks.append(extract_key_point(executor, loop, llm, extraction_prompt, result, i, len(results)))
@@ -100,14 +113,13 @@ async def load_prompt(meeting_type, user_prompt_file, template_file):
             except Exception as e:
                 print(f"加载用户个性化prompt失败: {e}")
 
-        required_vars = ["key_points", "meeting_info", "title"]
-        input_vars = []
-        for var in required_vars:
-            if "{" + var + "}" in template_content:
-                input_vars.append(var)
+        placeholder_vars = ["key_points", "meeting_info", "title"]
+        template_content = _escape_braces(template_content)
+        template_content = _restore_placeholders(template_content, placeholder_vars)
 
+        input_vars = [var for var in placeholder_vars if "{" + var + "}" in template_content]
         if not input_vars:
-            input_vars = required_vars
+            input_vars = placeholder_vars
 
         return PromptTemplate(
             template=template_content,
@@ -150,11 +162,11 @@ async def load_meeting_info(file_path):
 async def load_title(file_path):
     try:
         with open(file_path, encoding='utf-8') as f:
-            content = f.read()
-        return content
+            content = f.read().strip()
+        return content if content else "未命名会议"
     except Exception as e:
         print(f"加载标题失败: {e}")
-        return None
+        return "未命名会议"
 
 
 async def generate_final_report(key_points, api_key, meeting_type, prompt_file, user_prompt_file, meeting_info_file, title_file):
@@ -175,8 +187,6 @@ async def generate_final_report(key_points, api_key, meeting_type, prompt_file, 
         return None
 
     title = await load_title(title_file)
-    if not title:
-        return None
 
     prompt = await load_prompt(meeting_type, user_prompt_file, prompt_file)
     if not prompt:
@@ -189,7 +199,7 @@ async def generate_final_report(key_points, api_key, meeting_type, prompt_file, 
     formatted_prompt = prompt.format(key_points=combined_key_points, meeting_info=meeting_info, title=title)
 
     loop = asyncio.get_running_loop()
-    with ThreadPoolExecutor() as executor:
+    with ThreadPoolExecutor(max_workers=1) as executor:
         final_report = await loop.run_in_executor(
             executor,
             partial(llm.invoke, formatted_prompt)
@@ -208,6 +218,10 @@ async def main():
 
     session_dir = sys.argv[1]
 
+    def write_error(msg):
+        with open(os.path.join(session_dir, "error_summary.txt"), "w", encoding="utf-8") as f:
+            f.write(msg)
+
     api_key = os.environ.get("DEEPSEEK_API_KEY", "")
     if not api_key:
         raise ValueError("请设置环境变量 DEEPSEEK_API_KEY")
@@ -225,8 +239,9 @@ async def main():
         meeting_type = "progress"
 
     if meeting_type not in MEETING_TYPE_CONFIG:
-        print(f"错误: 不支持的会议类型 '{meeting_type}'")
-        print("支持的类型: " + ", ".join(MEETING_TYPE_CONFIG.keys()))
+        msg = f"不支持的会议类型 '{meeting_type}'，支持的类型: {', '.join(MEETING_TYPE_CONFIG.keys())}"
+        print(f"错误: {msg}")
+        write_error(msg)
         return
 
     config = MEETING_TYPE_CONFIG[meeting_type]
@@ -250,7 +265,15 @@ async def main():
         with open(intermediate_file, encoding="utf-8") as f:
             results = json.load(f)
     except FileNotFoundError:
-        print(f"错误: 未找到中间结果文件 '{intermediate_file}'")
+        msg = f"未找到中间结果文件 '{intermediate_file}'"
+        print(f"错误: {msg}")
+        write_error(msg)
+        return
+
+    if not results:
+        msg = "中间结果为空，无法生成纪要"
+        print(f"错误: {msg}")
+        write_error(msg)
         return
 
     key_points = await extract_key_points(results, extraction_prompt_file, api_key)
@@ -266,6 +289,7 @@ async def main():
         key_points, api_key, meeting_type, template_file, user_prompt_file, meeting_info_file, title_file
     )
     if not final_report:
+        write_error("生成会议纪要失败，请检查会议信息是否完整")
         return
 
     output_file = os.path.join(session_dir, "summary.md")

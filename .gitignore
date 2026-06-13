@@ -3,14 +3,18 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.egg-info/
-dist/
 build/
 *.egg
 
+# Virtual environments
+venv/
+.venv/
+env/
+
 # Environment / Secrets
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
 # Models
 /model/
@@ -26,7 +30,10 @@ user_prompt.txt
 key_points_output.txt
 summary.md
 title.txt
-processing.log
+error.txt
+error_transcription.txt
+error_summary.txt
+*.log
 
 # Uploads
 /uploads/
@@ -34,6 +41,9 @@ processing.log
 # Node.js / Frontend
 node_modules/
 dist/
+
+# Lint caches
+.ruff_cache/
 
 # OS files
 .DS_Store

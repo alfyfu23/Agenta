@@ -299,11 +299,9 @@ export default defineComponent({
             state: {
                 isLoading: false,
                 errorMessage: null,
-                response: null,
             },
             editor: null,
             transcribeEditor: null,
-            openai: null,
             sid: '',
             highlightRange: null,
             customPrompt: '',
@@ -312,10 +310,8 @@ export default defineComponent({
             showMarkdownPreview: true,
             isLoadingSummary: true,
             summaryCheckInterval: null,
-            meetingData: {
-                transcribe: '',
-                note: '',
-            },
+            isUnmounted: false,
+            contentVersion: 0,
         }
     },
 
@@ -332,6 +328,7 @@ export default defineComponent({
             )
         },
         markdownHtml() {
+            this.contentVersion
             if (!this.editor) return ''
             const rawContent = this.editor.getText()
 
@@ -371,21 +368,28 @@ export default defineComponent({
 
     mounted() {
         this.sid = this.$route.query.sid || ''
-        this.initOpenAI()
         this.startSummaryCheck()
-        this.fetchMeetingData()
         this.editor = new Editor({
             extensions: [
                 StarterKit,
                 new Plugin({
                     props: {
-                        decorations: () => null
+                        decorations: (state) => {
+                            if (!this.highlightRange) return null
+                            const { from, to } = this.highlightRange
+                            return DecorationSet.create(state.doc, [
+                                Decoration.inline(from, to, { class: 'ai-highlight' })
+                            ])
+                        }
                     }
                 })
             ],
             content: '',
             parseOptions: {
                 preserveWhitespace: true,
+            },
+            onUpdate: () => {
+                this.contentVersion++
             },
             onSelectionUpdate: ({ editor }) => {
                 const { from, to } = editor.state.selection
@@ -396,17 +400,6 @@ export default defineComponent({
             extensions: [StarterKit],
             content: '',
         })
-        this.editor.registerPlugin(new Plugin({
-            props: {
-                decorations: (state) => {
-                    if (!this.highlightRange) return null
-                    const { from, to } = this.highlightRange
-                    return DecorationSet.create(state.doc, [
-                        Decoration.inline(from, to, { class: 'ai-highlight' })
-                    ])
-                }
-            }
-        }))
         this.$nextTick(() => {
             const chatScroll = this.$el.querySelector('.ai-chat-history-scroll')
             if (chatScroll) chatScroll.scrollTop = chatScroll.scrollHeight
@@ -414,11 +407,12 @@ export default defineComponent({
     },
 
     beforeUnmount() {
-        this.editor?.destroy()
-        this.transcribeEditor?.destroy()
+        this.isUnmounted = true
         if (this.summaryCheckInterval) {
             clearInterval(this.summaryCheckInterval)
         }
+        this.editor?.destroy()
+        this.transcribeEditor?.destroy()
     },
 
     methods: {
@@ -447,25 +441,22 @@ export default defineComponent({
 
         // 新增：定时检查summary.md的方法
         startSummaryCheck() {
-            // 立即执行一次检查
             this.fetchSummaryMd().then(success => {
+                if (this.isUnmounted) return
                 if (success) {
-                    // 如果成功获取，清除定时器
-                    if (this.summaryCheckInterval) {
-                        clearInterval(this.summaryCheckInterval)
-                        this.summaryCheckInterval = null
-                    }
                     return
                 }
-
-                // 如果第一次失败，设置定时器每5秒检查一次
                 this.summaryCheckInterval = setInterval(async () => {
+                    if (this.isUnmounted) {
+                        clearInterval(this.summaryCheckInterval)
+                        return
+                    }
                     const success = await this.fetchSummaryMd()
                     if (success && this.summaryCheckInterval) {
                         clearInterval(this.summaryCheckInterval)
                         this.summaryCheckInterval = null
                     }
-                }, 5000) // 5秒间隔
+                }, 5000)
             })
         },
 
@@ -494,15 +485,6 @@ export default defineComponent({
             if (!this.transcribeCollapsed) {
                 this.fetchCombinedOutput()
             }
-        },
-
-        initOpenAI() {
-        },
-
-        selectAllText() {
-            if (!this.editor) return
-            const { doc } = this.editor.state
-            this.highlightRange = { from: 0, to: doc.content.size }
         },
 
         async runAiCommand(command) {
@@ -548,7 +530,6 @@ export default defineComponent({
                     return
                 }
                 const aiResponse = data.response
-                this.state.response = aiResponse
                 this.chatHistory.push({ user: userQuestion, ai: aiResponse })
             } catch (error) {
                 this.state.errorMessage = `AI处理失败: ${error.message}`
@@ -558,7 +539,7 @@ export default defineComponent({
         },
 
         async sendCustomPrompt() {
-            if (!this.customPrompt) return
+            if (!this.customPrompt.trim()) return
             this.state.isLoading = true
             this.state.errorMessage = null
             const { from, to } = this.editor.state.selection
@@ -586,7 +567,6 @@ export default defineComponent({
                     return
                 }
                 const aiResponse = data.response
-                this.state.response = aiResponse
                 this.chatHistory.push({
                     user: this.customPrompt + (selectedText ? `（针对选中内容）` : ''),
                     ai: aiResponse,
@@ -603,26 +583,8 @@ export default defineComponent({
             const historyItem = this.chatHistory[idx]
             if (!this.editor || !this.highlightRange || !historyItem.ai) return
             const { from, to } = this.highlightRange
-            historyItem.originalText = this.editor.state.doc.textBetween(from, to)
             this.editor.chain().focus().deleteRange({ from, to }).insertContent(historyItem.ai).run()
-            this.state.response = ''
             this.highlightRange = null
-            historyItem.replaced = true
-        },
-
-        undoReplaceFromHistory(idx) {
-            const historyItem = this.chatHistory[idx]
-            if (!this.editor || !this.highlightRange || !historyItem.originalText) return
-            const { from, to } = this.highlightRange
-            this.editor.chain().focus().deleteRange({ from, to }).insertContent(historyItem.originalText).run()
-            historyItem.replaced = false
-        },
-
-        discardHistory(idx) {
-            this.chatHistory.splice(idx, 1)
-        },
-
-        async fetchMeetingData() {
         },
 
         saveMeetingNote() {

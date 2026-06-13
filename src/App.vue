@@ -67,35 +67,28 @@
 
       <!-- 路由视图 -->
       <section class="flex-1 overflow-y-auto">
-        <router-view @step-change="updateStep" />
+        <router-view />
       </section>
     </main>
   </div>
 </template>
 
 <script>
-import { ref, computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 export default {
   name: 'App',
   setup() {
     const route = useRoute()
-    const currentStep = ref(1)
+    const router = useRouter()
 
-    // 根据当前路由计算步骤
-    const updateStep = (step) => {
-      currentStep.value = step
-    }
-
-    // 新建会议处理
     const handleNewMeeting = () => {
       if (confirm('当前操作会放弃未保存的内容，确定要新建会议吗？')) {
-        window.location.href = '/'
+        router.push('/')
       }
     }
 
-    // 监听路由变化
     const routeStepMap = {
       '/': 1,
       '/transcribe': 2,
@@ -103,16 +96,14 @@ export default {
       '/result': 4
     }
 
-    // 计算当前步骤
-    const computedStep = computed(() => {
+    const currentStep = computed(() => {
       return routeStepMap[route.path] || 1
     })
 
     return {
-      currentStep: computedStep,
-      updateStep,
+      currentStep,
       handleNewMeeting
     }
   }
 }
-</script> 
+</script>

@@ -3,14 +3,14 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Agenta会议纪要生成系统 - Vue3版本",
-  "main": "index.js",
+  "main": "src/main.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "serve": "vite preview",
-    "lint": "eslint src/ --ext .js,.vue",
-    "lint:fix": "eslint src/ --ext .js,.vue --fix",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
     "typecheck": "vue-tsc --noEmit",
     "lint:py": "ruff check .",
     "lint:py:fix": "ruff check --fix ."

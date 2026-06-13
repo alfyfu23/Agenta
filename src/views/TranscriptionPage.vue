@@ -16,7 +16,21 @@
     </div>
 
     <!-- 对话内容区域 -->
-    <div class="border-2 border-dashed border-border rounded-xl p-6 mb-8 min-h-[300px]">
+    <div
+      v-if="errorMessage"
+      class="border-2 border-red-300 rounded-xl p-6 mb-8 bg-red-50"
+    >
+      <p class="text-red-600 font-medium">
+        转写失败
+      </p>
+      <p class="text-red-500 text-sm mt-2">
+        {{ errorMessage }}
+      </p>
+    </div>
+    <div
+      v-else
+      class="border-2 border-dashed border-border rounded-xl p-6 mb-8 min-h-[300px]"
+    >
       <div class="mb-6">
         <p
           class="text-gray-600 text-lg"
@@ -65,28 +79,26 @@ export default {
         const route = useRoute()
 
         // 响应式数据
-        const progressText = ref('转写结果')
+        const progressText = ref('准备转写...')
         const progressBarWidth = ref(0)
         const transcription = ref('')
         const isCompleted = ref(false)
+        const errorMessage = ref('')
 
         let progressInterval = null
         let checkInterval = null
+        let pollCount = 0
         const sid = ref('')
 
         // 模拟进度条动画
         const startProgressAnimation = () => {
-            let progress = -2
+            let progress = 0
+            progressText.value = '正在转写中...'
             progressInterval = setInterval(() => {
                 progress += 1
-                if (progress > 95) progress = 95 // 保留最后5%等待完成
-                if (progress <= 0) {
-                    progressBarWidth.value = 0
-                    progressText.value = '转写结果'
-                } else {
-                    progressBarWidth.value = progress
-                    progressText.value = `正在转写中...${progress}%`
-                }
+                if (progress > 95) progress = 95
+                progressBarWidth.value = progress
+                progressText.value = `正在转写中...${progress}%`
             }, 750)
         }
 
@@ -97,15 +109,18 @@ export default {
                 const data = response.data
 
                 if (data.completed) {
-                    // 清除进度动画
-                    if (progressInterval) {
-                        clearInterval(progressInterval)
-                    }
-                    if (checkInterval) {
-                        clearInterval(checkInterval)
+                    if (data.error) {
+                        if (progressInterval) clearInterval(progressInterval)
+                        if (checkInterval) clearInterval(checkInterval)
+                        progressBarWidth.value = 0
+                        progressText.value = '转写失败'
+                        errorMessage.value = data.error
+                        return
                     }
 
-                    // 更新进度为100%
+                    if (progressInterval) clearInterval(progressInterval)
+                    if (checkInterval) clearInterval(checkInterval)
+
                     progressBarWidth.value = 100
                     progressText.value = '转写完成'
                     transcription.value = data.transcription
@@ -160,23 +175,26 @@ export default {
             router.push(`/templates${sidQuery}`)
         }
 
-        // 组件挂载时启动进度检查
+        const scheduleNextPoll = () => {
+            pollCount++
+            const delay = pollCount < 10 ? 1000 : pollCount < 30 ? 2000 : 5000
+            checkInterval = setTimeout(async () => {
+                await checkTranscription()
+                if (!isCompleted.value && !errorMessage.value) {
+                    scheduleNextPoll()
+                }
+            }, delay)
+        }
+
         onMounted(() => {
             sid.value = route.query.sid || ''
             startProgressAnimation()
-
-            // 每秒检查一次转写结果
-            checkInterval = setInterval(checkTranscription, 1000)
+            scheduleNextPoll()
         })
 
-        // 组件卸载时清理定时器
         onUnmounted(() => {
-            if (progressInterval) {
-                clearInterval(progressInterval)
-            }
-            if (checkInterval) {
-                clearInterval(checkInterval)
-            }
+            if (progressInterval) clearInterval(progressInterval)
+            if (checkInterval) clearTimeout(checkInterval)
         })
 
         return {
@@ -184,6 +202,7 @@ export default {
             progressBarWidth,
             transcription,
             isCompleted,
+            errorMessage,
             exportTranscription,
             goBack,
             goNext
