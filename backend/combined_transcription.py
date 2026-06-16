@@ -11,6 +11,19 @@ from funasr import AutoModel
 from funasr.utils.postprocess_utils import rich_transcription_postprocess
 from langchain_openai import ChatOpenAI
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(SCRIPT_DIR)
+
+
+def write_progress(session_dir: str, stage: str, percent: int, detail: str = "") -> None:
+    """Write progress.json for frontend polling."""
+    path = os.path.join(session_dir, "progress.json")
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"stage": stage, "percent": percent, "detail": detail}, f, ensure_ascii=False)
+    except Exception:
+        pass
+
 
 def chunk_text(text: str) -> list[str]:
     """Split text into chunks of ~1250 chars at sentence boundaries (。！？.!?)."""
@@ -73,7 +86,7 @@ async def process_transcription(session_dir: str) -> None:
         max_tokens=8192,
     )
 
-    prompt_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompts", "prompt_tra.txt")
+    prompt_file = os.path.join(SCRIPT_DIR, "prompts", "prompt_tra.txt")
     with open(prompt_file, encoding="utf-8") as f:
         fixed_prompt = f.read()
 
@@ -82,14 +95,23 @@ async def process_transcription(session_dir: str) -> None:
         user_input = f.read()
 
     chunks = chunk_text(user_input)
-    print(f"开始处理 {len(chunks)} 个文本块...")
+    total = len(chunks)
+    print(f"开始处理 {total} 个文本块...")
     start_time = time.time()
 
     loop = asyncio.get_running_loop()
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        tasks = []
-        for i, chunk in enumerate(chunks):
-            tasks.append(process_chunk(executor, loop, llm, fixed_prompt, chunk, i, len(chunks)))
+    completed = 0
+
+    async def tracked_chunk(i, chunk):
+        nonlocal completed
+        result = await process_chunk(executor_inner, loop, llm, fixed_prompt, chunk, i, total)
+        completed += 1
+        pct = 60 + int(35 * completed / total)
+        write_progress(session_dir, "proofreading", pct, f"正在 AI 校对 ({completed}/{total} 块)")
+        return result
+
+    with ThreadPoolExecutor(max_workers=5) as executor_inner:
+        tasks = [tracked_chunk(i, chunk) for i, chunk in enumerate(chunks)]
         results = await asyncio.gather(*tasks)
 
     total_time = time.time() - start_time
@@ -105,10 +127,6 @@ async def process_transcription(session_dir: str) -> None:
     with open(intermediate_file, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
     print(f"已保存中间结果到 {intermediate_file}")
-
-
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT_DIR = os.path.dirname(SCRIPT_DIR)
 
 
 def _get_device() -> str:
@@ -131,6 +149,7 @@ def main():
     input_file = sys.argv[1]
     session_dir = sys.argv[2]
 
+    write_progress(session_dir, "loading_model", 5, "正在加载语音模型...")
     device = _get_device()
     print(f"使用设备: {device}")
     print("正在加载SenseVoice模型...")
@@ -144,6 +163,7 @@ def main():
         disable_update=True,
     )
 
+    write_progress(session_dir, "transcribing", 30, "正在识别语音...")
     print("开始处理音频文件...")
     res = model.generate(
         input=input_file,
@@ -167,8 +187,11 @@ def main():
 
     print(f"转写结果已保存到 {output_file}")
 
+    write_progress(session_dir, "proofreading", 60, "正在 AI 校对...")
     print("开始处理转录文本...")
     asyncio.run(process_transcription(session_dir))
+
+    write_progress(session_dir, "done", 100, "转写完成")
 
 
 if __name__ == "__main__":

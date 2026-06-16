@@ -1,3 +1,4 @@
+import json
 import os
 import secrets
 import subprocess
@@ -116,6 +117,16 @@ def _get_session_lock():
     return sessions[sid]["lock"]
 
 
+def _read_progress(session_dir: str) -> dict:
+    """Read progress.json if it exists, return empty dict otherwise."""
+    path = os.path.join(session_dir, "progress.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
 @app.route("/")
 def index():
     return jsonify({"success": True, "message": "API index"})
@@ -168,7 +179,7 @@ def transcribe():
         session_lock.release()
         return jsonify({"error": "File not found"}), 404
 
-    for fname in ("combined_output.txt", "error_transcription.txt"):
+    for fname in ("combined_output.txt", "error_transcription.txt", "progress.json"):
         fpath = os.path.join(session_dir, fname)
         if os.path.exists(fpath):
             os.remove(fpath)
@@ -204,17 +215,18 @@ def transcribe():
 @app.route("/check_transcription")
 def check_transcription():
     session_dir = _get_session_dir()
+    progress = _read_progress(session_dir)
     error_file = os.path.join(session_dir, "error_transcription.txt")
     if os.path.exists(error_file):
         with open(error_file, encoding="utf-8") as f:
-            return jsonify({"completed": True, "error": f.read()})
+            return jsonify({"completed": True, "error": f.read(), "progress": progress})
     result_file = os.path.join(session_dir, "combined_output.txt")
     if os.path.exists(result_file) and os.path.getsize(result_file) > 0:
         with open(result_file, encoding="utf-8") as f:
             transcription = f.read()
-        return jsonify({"completed": True, "transcription": transcription})
+        return jsonify({"completed": True, "transcription": transcription, "progress": progress})
     else:
-        return jsonify({"completed": False})
+        return jsonify({"completed": False, "progress": progress})
 
 
 @app.route("/result", methods=["POST"])
@@ -226,7 +238,7 @@ def result():
     if not session_lock.acquire(blocking=False):
         return jsonify({"error": "当前会话已有任务在运行，请稍后再试"}), 409
 
-    for fname in ("summary.md", "error_summary.txt"):
+    for fname in ("summary.md", "error_summary.txt", "progress.json"):
         fpath = os.path.join(session_dir, fname)
         if os.path.exists(fpath):
             os.remove(fpath)
@@ -251,6 +263,20 @@ def result():
 
     threading.Thread(target=run_result).start()
     return jsonify({"success": True, "message": "Summary generation started"})
+
+
+@app.route("/check_summary")
+def check_summary():
+    session_dir = _get_session_dir()
+    progress = _read_progress(session_dir)
+    error_file = os.path.join(session_dir, "error_summary.txt")
+    if os.path.exists(error_file):
+        with open(error_file, encoding="utf-8") as f:
+            return jsonify({"completed": True, "error": f.read(), "progress": progress})
+    summary_file = os.path.join(session_dir, "summary.md")
+    if os.path.exists(summary_file) and os.path.getsize(summary_file) > 0:
+        return jsonify({"completed": True, "progress": progress})
+    return jsonify({"completed": False, "progress": progress})
 
 
 @app.route("/summary.md")

@@ -11,6 +11,17 @@ from langchain_openai import ChatOpenAI
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
+
+def write_progress(session_dir: str, stage: str, percent: int, detail: str = "") -> None:
+    """Write progress.json for frontend polling."""
+    path = os.path.join(session_dir, "progress.json")
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"stage": stage, "percent": percent, "detail": detail}, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+
 MEETING_TYPE_CONFIG = {
     "progress": {
         "extraction_prompt": os.path.join("prompts", "ex_prompt_project.txt"),
@@ -63,7 +74,9 @@ async def extract_key_point(executor, loop, llm, extraction_prompt, result, inde
         return f"[该片段处理失败: {e}]"
 
 
-async def extract_key_points(results: list[str], extraction_prompt_file: str, api_key: str) -> list[str]:
+async def extract_key_points(
+    results: list[str], extraction_prompt_file: str, api_key: str, session_dir: str = ""
+) -> list[str]:
     """Concurrently extract key points from each text chunk using LLM."""
     llm = ChatOpenAI(
         openai_api_key=api_key,
@@ -76,14 +89,24 @@ async def extract_key_points(results: list[str], extraction_prompt_file: str, ap
     with open(extraction_prompt_file, encoding="utf-8") as f:
         extraction_prompt = f.read()
 
-    print(f"开始提炼 {len(results)} 个结果的要点...")
+    total = len(results)
+    print(f"开始提炼 {total} 个结果的要点...")
     start_time = time.time()
 
     loop = asyncio.get_running_loop()
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        tasks = []
-        for i, result in enumerate(results):
-            tasks.append(extract_key_point(executor, loop, llm, extraction_prompt, result, i, len(results)))
+    completed = 0
+
+    async def tracked_extract(i, result):
+        nonlocal completed
+        kp = await extract_key_point(executor_inner, loop, llm, extraction_prompt, result, i, total)
+        completed += 1
+        if session_dir:
+            pct = 15 + int(45 * completed / total)
+            write_progress(session_dir, "extracting", pct, f"正在提取要点 ({completed}/{total})")
+        return kp
+
+    with ThreadPoolExecutor(max_workers=5) as executor_inner:
+        tasks = [tracked_extract(i, result) for i, result in enumerate(results)]
         key_points = await asyncio.gather(*tasks)
 
     total_time = time.time() - start_time
@@ -280,7 +303,8 @@ async def main():
         write_error(msg)
         return
 
-    key_points = await extract_key_points(results, extraction_prompt_file, api_key)
+    write_progress(session_dir, "extracting", 10, "正在提取要点...")
+    key_points = await extract_key_points(results, extraction_prompt_file, api_key, session_dir)
 
     key_points_file = os.path.join(session_dir, "key_points_output.txt")
     merged_key_points = "\n\n".join(key_points)
@@ -289,6 +313,7 @@ async def main():
 
     print(f"已保存提炼要点结果到 {key_points_file}")
 
+    write_progress(session_dir, "generating", 70, "正在生成会议纪要...")
     final_report = await generate_final_report(
         key_points, api_key, meeting_type, template_file, user_prompt_file, meeting_info_file, title_file
     )
@@ -300,6 +325,7 @@ async def main():
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(final_report)
 
+    write_progress(session_dir, "done", 100, "纪要生成完成")
     print(f"已保存最终会议纪要到 {output_file}")
 
 

@@ -65,10 +65,27 @@
                 <div class="pulse-circle" />
               </div>
               <p class="loading-text">
-                正在等待会议纪要生成...
+                {{ summaryProgressText }}
               </p>
+              <div
+                v-if="summaryProgressPercent > 0"
+                class="w-full max-w-xs mt-2"
+              >
+                <div class="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                  <div
+                    class="h-full bg-primary rounded-full transition-all duration-500"
+                    :style="{ width: summaryProgressPercent + '%' }"
+                  />
+                </div>
+              </div>
               <p class="loading-subtext">
                 将持续检查文件状态
+              </p>
+              <p
+                v-if="summaryError"
+                class="text-red-500 text-sm mt-2"
+              >
+                {{ summaryError }}
               </p>
             </div>
             <template v-else>
@@ -298,6 +315,9 @@ export default {
     const transcribeCollapsed = ref(true)
     const showMarkdownPreview = ref(true)
     const isLoadingSummary = ref(true)
+    const summaryProgressText = ref('正在等待会议纪要生成...')
+    const summaryProgressPercent = ref(0)
+    const summaryError = ref('')
     let summaryCheckInterval = null
     let isUnmounted = false
     const contentVersion = ref(0)
@@ -341,40 +361,65 @@ export default {
       })
     })
 
-    async function fetchSummaryMd() {
+    const SUMMARY_STAGE_TEXT = {
+      extracting: '正在提取要点...',
+      generating: '正在生成会议纪要...',
+      done: '纪要生成完成',
+    }
+
+    async function checkSummaryStatus() {
       try {
         const sidQuery = sid.value ? `?sid=${sid.value}` : ''
-        const response = await fetch(`/api/summary.md${sidQuery}`, { credentials: 'include' })
-        if (!response.ok) {
-          if (response.status === 404) throw new Error('文件不存在')
-          throw new Error('获取summary.md失败')
+        const response = await fetch(`/api/check_summary${sidQuery}`, { credentials: 'include' })
+        if (!response.ok) return false
+        const data = await response.json()
+
+        if (data.progress) {
+          if (data.progress.percent !== undefined) {
+            summaryProgressPercent.value = data.progress.percent
+          }
+          summaryProgressText.value = data.progress.detail
+            || SUMMARY_STAGE_TEXT[data.progress.stage]
+            || '正在处理...'
         }
-        const rawText = await response.text()
-        editor.value?.commands.setContent(rawText, false, { preserveWhitespace: true })
-        contentVersion.value++
-        isLoadingSummary.value = false
-        return true
+
+        if (data.completed) {
+          if (data.error) {
+            summaryError.value = data.error
+            summaryProgressText.value = '纪要生成失败'
+            return true
+          }
+          const mdResponse = await fetch(`/api/summary.md${sidQuery}`, { credentials: 'include' })
+          if (mdResponse.ok) {
+            const rawText = await mdResponse.text()
+            editor.value?.commands.setContent(rawText, false, { preserveWhitespace: true })
+            contentVersion.value++
+            isLoadingSummary.value = false
+          }
+          return true
+        }
+        return false
       } catch (error) {
         return false
       }
     }
 
     function startSummaryCheck() {
-      fetchSummaryMd().then(success => {
+      let pollCount = 0
+      const poll = async () => {
         if (isUnmounted) return
-        if (success) return
-        summaryCheckInterval = setInterval(async () => {
-          if (isUnmounted) {
-            clearInterval(summaryCheckInterval)
-            return
-          }
-          const ok = await fetchSummaryMd()
-          if (ok && summaryCheckInterval) {
+        const done = await checkSummaryStatus()
+        if (done) {
+          if (summaryCheckInterval) {
             clearInterval(summaryCheckInterval)
             summaryCheckInterval = null
           }
-        }, 5000)
-      })
+          return
+        }
+        pollCount++
+      }
+      poll()
+      summaryCheckInterval = setInterval(poll, 3000)
     }
 
     async function fetchCombinedOutput() {
@@ -564,6 +609,7 @@ export default {
     return {
       state, editor, transcribeEditor, sid, highlightRange, customPrompt,
       chatHistory, transcribeCollapsed, showMarkdownPreview, isLoadingSummary,
+      summaryProgressText, summaryProgressPercent, summaryError,
       contentVersion, isDisabled, selectedTextForPrompt, markdownHtml,
       onTranscribeLabelClick, runAiCommand, sendCustomPrompt,
       replaceSelectionFromHistory, saveMeetingNote, goBack,

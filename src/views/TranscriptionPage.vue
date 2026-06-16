@@ -6,6 +6,7 @@
         <p class="text-neutral">
           {{ progressText }}
         </p>
+        <span class="text-sm text-gray-400">{{ progressBarWidth }}%</span>
       </div>
       <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
         <div
@@ -78,7 +79,6 @@ export default {
         const router = useRouter()
         const route = useRoute()
 
-        // 响应式数据
         const progressText = ref('准备转写...')
         const progressBarWidth = ref(0)
         const transcription = ref('')
@@ -88,30 +88,45 @@ export default {
         let checkInterval = null
         let pollCount = 0
         let isDone = false
+        let fakeProgress = 0
         const sid = ref('')
 
-        // 模拟进度条动画
-        const startProgressAnimation = () => {
-            let progress = 0
-            progressText.value = '正在转写中...'
+        const STAGE_TEXT = {
+            loading_model: '正在加载语音模型...',
+            transcribing: '正在识别语音...',
+            proofreading: '正在 AI 校对...',
+            done: '转写完成',
+        }
+
+        const startFakeProgress = () => {
             progressInterval = setInterval(() => {
-                progress += 1
-                if (progress > 95) progress = 95
-                progressBarWidth.value = progress
-                progressText.value = `正在转写中...${progress}%`
+                if (fakeProgress < 5) fakeProgress += 1
+                else if (fakeProgress < 30) fakeProgress += 0.5
+                else if (fakeProgress < 60) fakeProgress += 0.3
+                else if (fakeProgress < 95) fakeProgress += 0.1
+                if (fakeProgress > 95) fakeProgress = 95
+                progressBarWidth.value = Math.round(fakeProgress)
+                if (fakeProgress < 30) progressText.value = STAGE_TEXT.loading_model
+                else if (fakeProgress < 60) progressText.value = STAGE_TEXT.transcribing
+                else progressText.value = STAGE_TEXT.proofreading
             }, 750)
         }
 
-        // 检查转写结果
         const checkTranscription = async () => {
             try {
                 const response = await axios.get(`/api/check_transcription?sid=${sid.value}`)
                 const data = response.data
 
+                if (data.progress && data.progress.percent !== undefined) {
+                    fakeProgress = data.progress.percent
+                    progressBarWidth.value = data.progress.percent
+                    progressText.value = data.progress.detail || STAGE_TEXT[data.progress.stage] || '正在处理...'
+                }
+
                 if (data.completed) {
                     if (data.error) {
                         if (progressInterval) clearInterval(progressInterval)
-                        if (checkInterval) clearInterval(checkInterval)
+                        if (checkInterval) clearTimeout(checkInterval)
                         progressBarWidth.value = 0
                         progressText.value = '转写失败'
                         errorMessage.value = data.error
@@ -119,7 +134,7 @@ export default {
                     }
 
                     if (progressInterval) clearInterval(progressInterval)
-                    if (checkInterval) clearInterval(checkInterval)
+                    if (checkInterval) clearTimeout(checkInterval)
 
                     progressBarWidth.value = 100
                     progressText.value = '转写完成'
@@ -127,47 +142,37 @@ export default {
                     isDone = true
                 }
             } catch (error) {
-                console.error('检查转写结果出错:', error)
+                // keep polling silently
             }
         }
 
-        // 导出转写结果
         const exportTranscription = () => {
             if (!transcription.value.trim()) {
                 alert('没有可保存的转写内容')
                 return
             }
 
-            // 创建文件名（使用当前日期和时间）
             const now = new Date()
-            const fileName = `转写结果_${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}.txt`
+            const pad = n => String(n).padStart(2, '0')
+            const fileName = `转写结果_${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}.txt`
 
-            // 创建Blob对象
             const blob = new Blob([transcription.value], { type: 'text/plain;charset=utf-8' })
-
-            // 创建下载链接
             const url = URL.createObjectURL(blob)
             const a = document.createElement('a')
             a.href = url
             a.download = fileName
-
-            // 触发下载
             document.body.appendChild(a)
             a.click()
-
-            // 清理
             setTimeout(() => {
                 document.body.removeChild(a)
                 URL.revokeObjectURL(url)
             }, 100)
         }
 
-        // 返回上一页
         const goBack = () => {
             router.push('/')
         }
 
-        // 下一步
         const goNext = () => {
             const sidQuery = sid.value ? `?sid=${sid.value}` : ''
             router.push(`/templates${sidQuery}`)
@@ -186,7 +191,7 @@ export default {
 
         onMounted(() => {
             sid.value = route.query.sid || ''
-            startProgressAnimation()
+            startFakeProgress()
             scheduleNextPoll()
         })
 
@@ -202,8 +207,8 @@ export default {
             errorMessage,
             exportTranscription,
             goBack,
-            goNext
+            goNext,
         }
-    }
+    },
 }
 </script>
